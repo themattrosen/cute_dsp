@@ -104,7 +104,7 @@ typedef struct cd_highpass_def_t
 {
 	float freq_cutoff;
 	float sampling_rate;
-};
+} cd_highpass_def_t;
 
 /*
 	creates a highpass filter definition.
@@ -225,7 +225,7 @@ cd_lowpass_t* cd_make_lowpass_filter(const cd_lowpass_def_t* definition)
 
 	filter->sampling_rate = definition->sampling_rate;
 	cd_set_lowpass_cutoff_frequency(filter, definition->freq_cutoff);
-
+	filter->y1 = filter->y2 = 0.f;
 	return filter;
 }
 
@@ -293,7 +293,7 @@ cd_highpass_t* cd_make_highpass_filter(const cd_highpass_def_t* definition)
 
 	filter->sampling_rate = definition->sampling_rate;
 	cd_set_highpass_cutoff_frequency(filter, definition->freq_cutoff);
-
+	filter->x1 = filter->x2 = filter->y1 = filter->y2 = 0;
 	return filter;
 }
 
