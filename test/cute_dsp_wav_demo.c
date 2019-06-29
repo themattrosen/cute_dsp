@@ -7,11 +7,11 @@
 
     To compile:
 
-        gcc -o cute_dsp_test cute_dsp_test.c cute_dsp_audio_data.c
+        gcc -o cute_dsp_wav_demo cute_dsp_wav_demo.c cute_dsp_audio_data.c
 
     To run:
 
-        ./cute_dsp_test <input-file>.wav <options>
+        ./cute_dsp_wav_demo <input-file>.wav <options>
 
         <input-file> is a simple 16 bit, 44.1kHZ .wav file to process
         <options> can be any of the following:
@@ -24,6 +24,7 @@
 
     Revision history:
         1.0     (05/25/2019) initial release: 
+        1.1     (06/29/2019) Updated functions to use the new dsp context to manage memory.
 */
 
 #include "cute_dsp_audio_data.h"
@@ -34,7 +35,7 @@
 #include <stdio.h>
 
 /* BEGIN TEST FUNCTIONS */
-static void process_low_pass(const cd_audio_data_t* in)
+static void process_low_pass(cd_context_t* context, const cd_audio_data_t* in)
 {
     cd_audio_data_t out = cd_make_audio_data(in->num_samples, in->bits_per_sample, in->sampling_rate);
 
@@ -44,7 +45,7 @@ static void process_low_pass(const cd_audio_data_t* in)
     float cutoff = 4000.f;
 
     cd_lowpass_def_t def = cd_make_lowpass_def(cutoff, in->sampling_rate);
-    cd_lowpass_t* lpf = cd_make_lowpass_filter(&def);
+    cd_lowpass_t* lpf = cd_make_lowpass_filter(context, &def);
 
     for(; i < num_samples; ++i)
     {
@@ -58,11 +59,11 @@ static void process_low_pass(const cd_audio_data_t* in)
 
     cd_write_wav_file("output-l.wav", &out);
 
-    cd_release_lowpass(&lpf);
+    cd_release_lowpass(context, &lpf);
     cd_release_audio_data(&out);
 }
 
-static void process_high_pass(const cd_audio_data_t* in)
+static void process_high_pass(cd_context_t* context, const cd_audio_data_t* in)
 {
     cd_audio_data_t out = cd_make_audio_data(in->num_samples, in->bits_per_sample, in->sampling_rate);
 
@@ -72,7 +73,7 @@ static void process_high_pass(const cd_audio_data_t* in)
     float cutoff = 400.f;
 
     cd_highpass_def_t def = cd_make_highpass_def(cutoff, in->sampling_rate);
-    cd_highpass_t* hpf = cd_make_highpass_filter(&def);
+    cd_highpass_t* hpf = cd_make_highpass_filter(context, &def);
 
     for(; i < num_samples; ++i)
     {
@@ -86,13 +87,13 @@ static void process_high_pass(const cd_audio_data_t* in)
 
     cd_write_wav_file("output-h.wav", &out);
 
-    cd_release_highpass(&hpf);
+    cd_release_highpass(context, &hpf);
     cd_release_audio_data(&out);
 }
 /* END TEST FUNCTIONS */
 
 /* BEGIN OPTIONS DEFINITIONS */
-typedef void (*process_func)(const cd_audio_data_t* );
+typedef void (*process_func)(cd_context_t*, const cd_audio_data_t* );
 
 typedef struct process_option
 {
@@ -115,6 +116,11 @@ int main(int argc, char** argv)
     unsigned i = 2;
     unsigned length = argc;
     cd_audio_data_t in_data = cd_read_wav_file(filename);
+    cd_context_t* context;
+    cd_context_def_t context_def;
+    context_def.playing_pool_count = 10;
+    context_def.sampling_rate = in_data.sampling_rate;
+    context = cd_make_context(context_def);
 
     /* process each option provided */
     for(; i < length; ++i)
@@ -128,7 +134,7 @@ int main(int argc, char** argv)
         {
             if(OPS[j].option == next_option)
             {
-                OPS[j].func(&in_data);
+                OPS[j].func(context, &in_data);
                 break;
             }
         }
