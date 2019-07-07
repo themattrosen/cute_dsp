@@ -3,7 +3,7 @@
 		Licensing information can be found at the end of the file.
 	------------------------------------------------------------------------------
 
-    cute_dsp_test.c - v1.0
+    cute_dsp_wav_demo.c - v1.1
 
     To compile:
 

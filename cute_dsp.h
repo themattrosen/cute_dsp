@@ -82,6 +82,7 @@ typedef struct cd_highpass_def_t
 	float sampling_rate;
 } cd_highpass_def_t;
 
+#define CUTE_DSP_MAX_FRAME_LENGTH 4096
 /* END FORWARD DECLARATIONS */
 
 /* BEGIN DSP CONTEXT API */
@@ -100,9 +101,10 @@ void cd_release_context(cd_context_t** context);
 /* BEGIN DSP MIXER API */
 typedef struct cd_mixer_t
 {
-	cd_lowpass_t** lowpass;		// linkedlist of lowpass filters, size = channel_count
-	cd_highpass_t** highpass;	// linkedlist of highpass filters, size = channel_count
+	cd_lowpass_t* lowpass;		// linkedlist of lowpass filters, size = channel_count
+	cd_highpass_t* highpass;	// linkedlist of highpass filters, size = channel_count
 	unsigned int channel_count;	// number of audio channels (mono or stereo audio)
+	float output_samples[2][CUTE_DSP_MAX_FRAME_LENGTH];
 } cd_mixer_t;
 
 typedef struct cd_mixer_def_t
@@ -120,9 +122,14 @@ typedef struct cd_mixer_def_t
 } cd_mixer_def_t;
 
 /*
+	creates a dsp mixer def
+*/
+cd_mixer_def_t cd_make_mixer_def(const cd_lowpass_def_t* lp_def, const cd_highpass_def_t* hp_def, unsigned channel_count);
+
+/*
 	creates a dsp mixer to be attached to playing sounds
 */
-cd_mixer_t* cd_make_mixer(cd_context_t* context, cd_mixer_def_t def);
+cd_mixer_t* cd_make_mixer(cd_context_t* context, const cd_mixer_def_t* def);
 
 /*
 	called from the mix thread
@@ -236,6 +243,7 @@ float cd_sample_highpass(cd_highpass_t* filter, float input);
 /* HELPER MACROS */
 #if !defined(CUTE_DSP_ALLOC)
 	#include <stdlib.h> // malloc, free
+	#include <string.h> // memcpy
 	#define CUTE_DSP_ALLOC(size, mem_ctx) malloc(size)
 	#define CUTE_DSP_FREE(mem, mem_ctx)   free(mem)
 #endif
@@ -346,7 +354,7 @@ void cd_make_memory_pool(cd_memory_pool_t* mem_pool, cd_memory_pool_def_t def)
 	// initialize free list
 	for(i = 0; i < def.max_objects; ++i)
 	{
-		cd_memory_pool_object_t* obj = (cd_memory_pool_object_t *)(pool + i * def.size_per_object);
+		cd_memory_pool_object_t* obj = (cd_memory_pool_object_t *)(mem_pool->pool + i * def.size_per_object);
 		obj->next = mem_pool->free_list;
 		mem_pool->free_list = obj;
 	}
@@ -428,12 +436,12 @@ cd_context_t* cd_make_context(cd_context_def_t def)
 	cd_make_memory_pool(&context->mixer_pool, mixer_def);
 	context->playing_pool_size = def.playing_pool_count;
 
-	lowpass_def.max_objects = def.playing_pool_count;
+	lowpass_def.max_objects = def.playing_pool_count * 2;
 	lowpass_def.size_per_object = sizeof(cd_lowpass_t);
 	cd_make_memory_pool(&context->lowpass_filters, lowpass_def);
 	context->lowpass_pool_size = def.playing_pool_count * 2;
 
-	highpass_def.max_objects = def.playing_pool_count;
+	highpass_def.max_objects = def.playing_pool_count * 2;
 	highpass_def.size_per_object = sizeof(cd_highpass_t);
 	cd_make_memory_pool(&context->highpass_filters, highpass_def);
 	context->highpass_pool_size = def.playing_pool_count * 2;
@@ -457,38 +465,37 @@ void cd_release_context(cd_context_t** context)
 
 /* BEGIN MIXER IMPLEMENTATION */
 
-cd_mixer_t* cd_make_mixer(cd_context_t* context, cd_mixer_def_t def)
+cd_mixer_t* cd_make_mixer(cd_context_t* context, const cd_mixer_def_t* def)
 {
-	CUTE_DSP_ASSERT(context);
-	CUTE_DSP_ASSERT(def.channel_count == CUTE_DSP_MONO || def.channel_count == CUTE_DSP_STEREO);
+	CUTE_DSP_ASSERT(context && def);
+	CUTE_DSP_ASSERT(def->channel_count == CUTE_DSP_MONO || def->channel_count == CUTE_DSP_STEREO);
 	cd_mixer_t* mixer = (cd_mixer_t *)cd_memory_pool_alloc(&context->mixer_pool);
-
+	
 	// add low pass
-	if(def.has_lowpass)
+	if(def->has_lowpass)
 	{
-		cd_lowpass_t* lowpass = cd_make_lowpass_filter(context, &(def.lowpass_def));
-		mixer->lowpass = &lowpass;
-		if(def.channel_count == CUTE_DSP_STEREO)
+		cd_lowpass_t* lowpass = cd_make_lowpass_filter(context, &(def->lowpass_def));
+		mixer->lowpass = lowpass;
+		if(def->channel_count == CUTE_DSP_STEREO)
 		{
-			cd_lowpass_t* lowpass1 = cd_make_lowpass_filter(context, &(def.lowpass_def));
-			lowpass->next = lowpass1;
+			cd_lowpass_t* lowpass1 = cd_make_lowpass_filter(context, &(def->lowpass_def));
+			mixer->lowpass->next = lowpass1;
 		}
 	}
 	else
 	{
 		mixer->lowpass = 0;
 	}
-	
 
 	// add high pass
-	if(def.has_highpass)
+	if(def->has_highpass)
 	{
-		cd_highpass_t* highpass = cd_make_highpass_filter(context, &(def.highpass_def));
-		mixer->highpass = &highpass;
-		if(def.channel_count == CUTE_DSP_STEREO)
+		cd_highpass_t* highpass = cd_make_highpass_filter(context, &(def->highpass_def));
+		mixer->highpass = highpass;
+		if(def->channel_count == CUTE_DSP_STEREO)
 		{
-			cd_highpass_t* highpass1 = cd_make_highpass_filter(context, &(def.highpass_def));
-			highpass->next = highpass1;
+			cd_highpass_t* highpass1 = cd_make_highpass_filter(context, &(def->highpass_def));
+			mixer->highpass->next = highpass1;
 		}
 	}
 	else
@@ -496,51 +503,56 @@ cd_mixer_t* cd_make_mixer(cd_context_t* context, cd_mixer_def_t def)
 		mixer->highpass = 0;
 	}
 	
-
+	mixer->channel_count = def->channel_count;
+	memset(mixer->output_samples[0], 0, sizeof(float) * CUTE_DSP_MAX_FRAME_LENGTH);
+	memset(mixer->output_samples[1], 0, sizeof(float) * CUTE_DSP_MAX_FRAME_LENGTH);
 	return mixer;
 }
 
 float* cd_sample_mixer(cd_mixer_t* mixer, float* input_ptr, unsigned channel_num, unsigned sample_count)
 {
-	cd_lowpass_t* lowpass = 0;
-	cd_highpass_t* highpass = 0;
 	unsigned i = 0;
-	float* output = input_ptr;
-
-	// assign the set of filters to be used for the channel
-	switch(channel_num)
-	{
-		case 0:
-			lowpass = *mixer->lowpass;
-			highpass = *mixer->highpass;
-			break;
-		case 1:
-			lowpass = (*mixer->lowpass)->next;
-			highpass = (*mixer->highpass)->next;
-			break;
-	}
+	float* output = mixer->output_samples[channel_num];
+	
+	if(!input_ptr || !sample_count)
+		return input_ptr;
 
 	//TODO: to optimize in the future:
 	// make sample functions into macros to process everything inline
 
 	// process the lowpass filter
-	for(i = 0; i < sample_count; ++i)
+	if(mixer->lowpass)
 	{
-		*output = cd_sample_lowpass(lowpass, *output);
-		++output;
-	}
+		cd_lowpass_t* lowpass = (channel_num == 0) ? mixer->lowpass : mixer->lowpass->next;
+/*
+		for(i = 0; i < sample_count; ++i)
+		{
+			//*output = cd_sample_lowpass(lowpass, *output);
+			++output;
+		}
 
-	// reset the output_ptr
-	output = input_ptr;
+		// reset the output ptr
+		output = mixer->output_samples[channel_num];
+		*/
+	}
 
 	// process the highpass filter
-	for(i = 0; i < sample_count; ++i)
+	if(mixer->highpass)
 	{
-		*output = cd_sample_highpass(highpass, *output);
-		++output;
+		cd_highpass_t* highpass = (channel_num == 0) ? mixer->highpass : mixer->highpass->next;
+
+		for(i = 0; i < sample_count; ++i)
+		{
+			printf("NO");
+			*output = cd_sample_highpass(highpass, *output);
+			++output;
+		}
+		
+		// reset the output ptr
+		output = mixer->output_samples[channel_num];
 	}
 
-	return input_ptr;
+	return output;
 }
 
 void cd_release_mixer(cd_context_t* context, cd_mixer_t** mixer_ptr)
@@ -551,25 +563,25 @@ void cd_release_mixer(cd_context_t* context, cd_mixer_t** mixer_ptr)
 	// handle both channels of lowpass filters
 	if(mixer->lowpass)
 	{
-		cd_lowpass_t* next = (*mixer->lowpass)->next;
-		cd_release_lowpass(context, mixer->lowpass);
+		cd_lowpass_t* next = mixer->lowpass->next;
+		cd_release_lowpass(context, &mixer->lowpass);
 		if(next)
 		{
 			cd_release_lowpass(context, &next);
 		}
-		*mixer->lowpass = 0;
+		mixer->lowpass = 0;
 	}
 
 	// handle both channels of highpass filters
 	if(mixer->highpass)
 	{
-		cd_highpass_t* next = (*mixer->highpass)->next;
-		cd_release_highpass(context, mixer->highpass);
+		cd_highpass_t* next = mixer->highpass->next;
+		cd_release_highpass(context, &mixer->highpass);
 		if(next)
 		{
 			cd_release_highpass(context, &next);
 		}
-		*mixer->highpass = 0;
+		mixer->highpass = 0;
 	}
 
 	cd_memory_pool_free(&context->mixer_pool, mixer);
@@ -635,7 +647,6 @@ float cd_get_lowpass_cutoff_frequency(const cd_lowpass_t* filter)
 
 float cd_sample_lowpass(cd_lowpass_t* filter, float input)
 {
-	CUTE_DSP_ASSERT(filter);
 	float output = 	filter->x_coeff * input + 
 					filter->y1_coeff * filter->y1 + 
 					filter->y2_coeff * filter->y2;
@@ -705,7 +716,6 @@ float cd_get_highpass_cutoff_frequency(const cd_highpass_t* filter)
 
 float cd_sample_highpass(cd_highpass_t* filter, float input)
 {
-	CUTE_DSP_ASSERT(filter);
 	float output = 	filter->x_coeff  * input +
 					filter->x1_coeff * filter->x1 +
 					filter->x_coeff  * filter->x2 +

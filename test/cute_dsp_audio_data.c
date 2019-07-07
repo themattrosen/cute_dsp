@@ -51,11 +51,12 @@ cd_audio_data_t cd_read_wav_file(const char* filename)
     {
         unsigned i = 0;
         adata.data = (float*)CUTE_DSP_ALLOC(sizeof(float) * adata.num_samples);
-        const float denom = (float)((1 << (adata.bits_per_sample - 1)));
+        //const float denom = (float)((1 << (adata.bits_per_sample - 1)));
         for(; i < adata.num_samples; ++i)
         {
             short val = *(short*)(data + i * sizeof(short));
-            float nextVal = (float)(val) / denom;
+            //float nextVal = (float)(val) / denom;
+            float nextVal = (float)val;
             adata.data[i] = nextVal;
         }
     }
@@ -173,7 +174,8 @@ void cd_write_wav_file(const char* filename, const cd_audio_data_t* data)
     for(; i < data->num_samples; ++i)
     {
         float nextF = data->data[i];
-        short nextS = FLOAT_TO_SHORT(nextF);
+        //short nextS = FLOAT_TO_SHORT(nextF);
+        short nextS = (short)nextF;
         outData[i] = nextS;
     }
 
