@@ -23,6 +23,9 @@
     Revision history:
         1.0     (06/30/2019) initial release: 
 */
+
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <stdio.h>
 
 #define CUTE_DSP_IMPLEMENTATION
@@ -34,45 +37,10 @@
 #define CUTE_DSP_ASSERT_INTERNAL *(int*)0 = 0
 #define CUTE_DSP_ASSERT(X) do { if(!(X)) CUTE_DSP_ASSERT_INTERNAL; } while (0)
 
-/* BEGIN UNIT TEST FUNCTIONS */
-static void test_memory_manager()
-{
-
-}
-
-static void test_mixer()
-{
-
-}
-/* END UNIT TEST FUNCTIONS */
-
 /* BEGIN INTEGRATION TEST */
 
-void set_lpf_cutoffs(cd_lowpass_t* lowpass, float cutoff)
-{
-	if(lowpass)
-	{
-		cd_set_lowpass_cutoff_frequency(lowpass, cutoff);
-		if(lowpass->next)
-		{
-			cd_set_lowpass_cutoff_frequency(lowpass->next, cutoff);
-		}
-	}
-}
-
-void set_hpf_cutoffs(cd_highpass_t* highpass, float cutoff)
-{
-	if(highpass)
-	{
-		cd_set_highpass_cutoff_frequency(highpass, cutoff);
-		if(highpass->next)
-		{
-			cd_set_highpass_cutoff_frequency(highpass->next, cutoff);
-		}
-	}
-}
-
-
+// data on certain keys current and last frame status
+// each takes one bit, 1 for pressed, 0 for not
 struct
 {
 	unsigned q0 : 1;
@@ -97,6 +65,8 @@ struct
 	unsigned g1 : 1;
 } g_inputs;
 
+// called each frame of loop to check key presses
+// checks hardcoded keys and sets appropriate values in g_inputs
 void handle_input()
 {
 	// T
@@ -173,76 +143,95 @@ void handle_input()
 
 static void test_integration()
 {
-	printf("BEGINNING TEST_INTEGRATION\n");
 	int frequency = 44000; // a good standard frequency for playing commonly saved OGG + wav files
 	int latency_in_Hz = 15; // a good latency, too high will cause artifacts, too low will create noticeable delays
 	int buffered_seconds = 5; // number of seconds the buffer will hold in memory. want this long enough in case of frame-delays
 	int use_playing_pool = 1; // non-zero uses high-level API, 0 uses low-level API
 	int num_elements_in_playing_pool = 5; // pooled memory array size for playing sounds
 
-	cd_context_t* dsp_ctx = 0;
-	cs_context_t* sound_ctx = cs_make_context(GetConsoleWindow(), frequency, latency_in_Hz, buffered_seconds, num_elements_in_playing_pool);
-	cs_dsp_context(sound_ctx, &dsp_ctx);
+	// create the dsp contexts
+	cd_context_def_t context_definition;
+	context_definition.playing_pool_count = num_elements_in_playing_pool;
+	context_definition.sampling_rate = (float)frequency;
+	cd_context_t* dsp_ctx = cd_make_context(context_definition);
 	CUTE_DSP_ASSERT(dsp_ctx);
+
+	// create the sound context
+	cs_context_t* sound_ctx = cs_make_context(GetConsoleWindow(), frequency, latency_in_Hz, buffered_seconds, num_elements_in_playing_pool);
+	cs_set_dsp_context(sound_ctx, dsp_ctx);
+
+	// set mix thread running
 	cs_spawn_mix_thread(sound_ctx);
 	cs_thread_sleep_delay(sound_ctx, 10);
 
-	cs_loaded_sound_t music1 = cs_load_wav("music2.wav");
-	// cs_loaded_sound_t stinger1 = cs_load_wav("stinger1.wav");
-	// cs_loaded_sound_t stinger2 = cs_load_wav("stinger2.wav");
+	// load audio files
+	cs_loaded_sound_t music1 = cs_load_wav("music1.wav");
+	cs_loaded_sound_t stinger1 = cs_load_wav("stinger1.wav");
+	cs_loaded_sound_t stinger2 = cs_load_wav("stinger2.wav");
 
-	cd_lowpass_def_t lpdef = cd_make_lowpass_def(500.f, (float)music1.sample_rate);
-	//cd_highpass_def_t hpdef = cd_make_highpass_def(500.f, (float)music1.sample_rate);
+	// defs for highpass and lowpass
+	cd_lowpass_def_t lpdef = cd_make_lowpass_def(2000.f, (float)music1.sample_rate);
+	cd_highpass_def_t hpdef = cd_make_highpass_def(500.f, (float)music1.sample_rate);
 
+	// mixer for music track
 	cd_mixer_def_t mdef0;
 	mdef0.channel_count = music1.channel_count;
-	mdef0.has_highpass = 0;
-	//mdef0.has_highpass = 1;
+	mdef0.has_highpass = 1;
 	mdef0.has_lowpass = 1;
 	mdef0.lowpass_def = lpdef;
-	//mdef0.highpass_def = hpdef;
+	mdef0.highpass_def = hpdef;
 	cd_mixer_t* mixer0 = cd_make_mixer(dsp_ctx, &mdef0);
-	CUTE_DSP_ASSERT(mixer0 && mixer0->lowpass && !mixer0->highpass);
+	CUTE_DSP_ASSERT(mixer0 && mixer0->lowpass && mixer0->highpass);
 
-	// cd_mixer_def_t mdef1;
-	// mdef1.channel_count = stinger1.channel_count;
-	// mdef1.has_highpass = 0;
-	// mdef1.has_lowpass = 1;
-	// lpdef.sampling_rate = (float)stinger1.sample_rate;
-	// mdef1.lowpass_def = lpdef;
-	// cd_mixer_t* mixer1 = cd_make_mixer(dsp_ctx, &mdef1);
+	// mixer for stinger 1
+	cd_mixer_def_t mdef1;
+	mdef1.channel_count = stinger1.channel_count;
+	mdef1.has_highpass = 0;
+	mdef1.has_lowpass = 1;
+	lpdef.sampling_rate = (float)stinger1.sample_rate;
+	mdef1.lowpass_def = lpdef;
+	cd_mixer_t* mixer1 = cd_make_mixer(dsp_ctx, &mdef1);
 
-	// cd_mixer_def_t mdef2;
-	// mdef2.channel_count = stinger2.channel_count;
-	// mdef2.has_highpass = 1;
-	// mdef2.has_lowpass = 0;
-	// hpdef.sampling_rate = (float)stinger2.sample_rate;
-	// mdef2.highpass_def = hpdef;
-	//cd_mixer_t* mixer2 = cd_make_mixer(dsp_ctx, &mdef2);
+	// mixer for stinger 2
+	cd_mixer_def_t mdef2;
+	mdef2.channel_count = stinger2.channel_count;
+	mdef2.has_highpass = 1;
+	mdef2.has_lowpass = 0;
+	hpdef.sampling_rate = (float)stinger2.sample_rate;
+	mdef2.highpass_def = hpdef;
+	cd_mixer_t* mixer2 = cd_make_mixer(dsp_ctx, &mdef2);
 
+	// retrieve copies of the filters and cutoffs
 	cd_lowpass_t* mlp = mixer0->lowpass;
 	float mlp_cutoff = cd_get_lowpass_cutoff_frequency(mlp);
-	//cd_highpass_t* mhp = mixer0->highpass;
-	//float mhp_cutoff = cd_get_highpass_cutoff_frequency(mhp);
-	//cd_lowpass_t* slp = mixer1->lowpass;
-	//float slp_cutoff = cd_get_lowpass_cutoff_frequency(slp);
-	//cd_highpass_t* shp = mixer2->highpass;
-	//float shp_cutoff = cd_get_highpass_cutoff_frequency(shp);
+	cd_highpass_t* mhp = mixer0->highpass;
+	float mhp_cutoff = cd_get_highpass_cutoff_frequency(mhp);
+	cd_lowpass_t* slp = mixer1->lowpass;
+	float slp_cutoff = cd_get_lowpass_cutoff_frequency(slp);
+	cd_highpass_t* shp = mixer2->highpass;
+	float shp_cutoff = cd_get_highpass_cutoff_frequency(shp);
 
+	// play sound defs to start playing audio
 	cs_play_sound_def_t def0 = cs_make_def(&music1);
-	//cs_play_sound_def_t def1 = cs_make_def(&stinger1);
-	//cs_play_sound_def_t def2 = cs_make_def(&stinger2);
+	cs_play_sound_def_t def1 = cs_make_def(&stinger1);
+	cs_play_sound_def_t def2 = cs_make_def(&stinger2);
 
+	// set mixers on play defs
 	def0.dsp_mixer = mixer0;
 	def0.looped = 1;
-	//def1.dsp_mixer = mixer1;
-	//def2.dsp_mixer = mixer2;
+	def1.dsp_mixer = mixer1;
+	def2.dsp_mixer = mixer2;
 
-	printf("ENTERING LOOP\n");
+	// start playing music
 	cs_play_sound(sound_ctx, def0);
+
+	// loop until triggered otherwise
 	for(;;)
 	{
+		// handle key up/down
 		handle_input();
+
+		// if user ever presses escape, break out
 		if(GetAsyncKeyState(VK_ESCAPE))
 		{
 			printf("QUITTING INTEGRATION_TEST\n");
@@ -250,142 +239,103 @@ static void test_integration()
 		}
 
 		// music lpf
-		/*
 		if(BUTTON_IS_RELEASED(t0, t1))
 		{
-			printf("T PRESSED\n");
 			mlp_cutoff += 100.f;
-			set_lpf_cutoffs(mlp, mlp_cutoff);
+			cd_set_lowpass_filter_cutoffs(mixer0, mlp_cutoff);
+			printf("T PRESSED, music lpf cutoff: %.4f\n", mlp_cutoff);
 		}
 		else if(BUTTON_IS_RELEASED(r0, r1))
 		{
-			printf("R PRESSED\n");
 			mlp_cutoff -= 100.f;
-			set_lpf_cutoffs(mlp, mlp_cutoff);
+			cd_set_lowpass_filter_cutoffs(mixer0, mlp_cutoff);
+			printf("R PRESSED, music lpf cutoff: %.4f\n", mlp_cutoff);
 		}
 
 		// music hpf
 		if(BUTTON_IS_RELEASED(g0, g1))
 		{
-			printf("G PRESSED\n");
 			mhp_cutoff += 100.f;
-			set_hpf_cutoffs(mhp, mhp_cutoff);
+			cd_set_highpass_filter_cutoffs(mixer0, mhp_cutoff);
+			printf("G PRESSED, music hpf cutoff: %.4f\n", mhp_cutoff);
 		}
 		else if(BUTTON_IS_RELEASED(f0, f1))
 		{
-			printf("F PRESSED\n");
 			mhp_cutoff -= 100.f;
-			set_hpf_cutoffs(mhp, mhp_cutoff);
+			cd_set_highpass_filter_cutoffs(mixer0, mhp_cutoff);
+			printf("F PRESSED, music hpf cutoff: %.4f\n", mhp_cutoff);
 		}
-*/
+
 		if(BUTTON_IS_RELEASED(q0, q1))
 		{
-			printf("Q PRESSED\n");
-			//cs_play_sound(sound_ctx, def1);
+			printf("Q PRESSED, playing stinger1\n");
+			cs_play_sound(sound_ctx, def1);
 		}
-/*
+
 		// stinger1 lpf
 		if(BUTTON_IS_RELEASED(e0, e1))
 		{
-			printf("E PRESSED\n");
 			slp_cutoff += 100.f;
-			set_lpf_cutoffs(slp, slp_cutoff);
+			printf("E PRESSED, stinger1 lpf cutoff: %.4f\n", slp_cutoff);
+			cd_set_lowpass_filter_cutoffs(mixer1, slp_cutoff);
 		}
 		else if(BUTTON_IS_RELEASED(w0, w1))
 		{
-			printf("W PRESSED\n");
 			slp_cutoff -= 100.f;
-			set_lpf_cutoffs(slp, slp_cutoff);
+			printf("W PRESSED, stinger1 lpf cutoff: %.4f\n", slp_cutoff);
+			cd_set_lowpass_filter_cutoffs(mixer1, slp_cutoff);
 		}
-*/
+
 		if(BUTTON_IS_RELEASED(a0, a1))
 		{
-			printf("A PRESSED\n");
-			//cs_play_sound(sound_ctx, def2);
+			printf("A PRESSED, playing stinger2\n");
+			cs_play_sound(sound_ctx, def2);
 		}
-/*
+
 		// stinger2 hpf
 		if(BUTTON_IS_RELEASED(d0, d1))
 		{
-			printf("D PRESSED\n");
 			shp_cutoff += 100.f;
-			set_hpf_cutoffs(shp, shp_cutoff);
+			printf("D PRESSED, stinger2 hpf cutoff: %.4f\n", shp_cutoff);
+			cd_set_highpass_filter_cutoffs(mixer2, shp_cutoff);
 		}
 		else if(BUTTON_IS_RELEASED(s0, s1))
 		{
-			printf("S PRESSED\n");
 			shp_cutoff -= 100.f;
-			set_hpf_cutoffs(shp, shp_cutoff);
+			printf("S PRESSED, stinger2 hpf cutoff: %.4f\n", shp_cutoff);
+			cd_set_highpass_filter_cutoffs(mixer2, shp_cutoff);
 		}
-		*/
 	}
 
+	// release contexts
 	cs_shutdown_context(sound_ctx);
+	cd_release_context(&dsp_ctx);
 
 	// free sounds
 	cs_free_sound(&music1);
-	// cs_free_sound(&stinger1);
-	// cs_free_sound(&stinger2);
-
-	printf("ENDING TEST_INTEGRATION\n");
+	cs_free_sound(&stinger1);
+	cs_free_sound(&stinger2);
 }
 
 /* END INTEGRATION TEST */
 
-/* BEGIN TEST LIST */
-typedef void (*unit_test_func)(void);
-static const unsigned NUM_TESTS = 1;
-static const unit_test_func UNIT_TESTS[] =
-{
-    test_memory_manager,
-	test_mixer
-};
-/* END TEST LIST */
-
 /* BEGIN MAIN */
 int main(int argc, char** argv)
 {
-	int run_unit_tests = 0;
-	int run_integration_test = 0;
-	if(!argc)
-	{
-		run_unit_tests = run_integration_test = 1;
-	}
-	else if(argv[1][1] == 'u')
-	{
-		run_unit_tests = 1;
-	}
-	else if(argv[1][1] == 'i')
-	{
-		run_integration_test = 1;
-	}
+	printf("Beginning Integration Test\n");
+	printf("**************************\n\n");
+	printf("To stop the test, press ESC\n\n");
+	printf("To play stinger1, press Q\n");
+	printf("To increase cutoff frequency of stinger1 lowpass filter, press E\n");
+	printf("To decrease cutoff frequency of stinger1 lowpass filter, press W\n\n");
+	printf("To play stinger2, press A\n");
+	printf("To increase cutoff frequency of stinger2 highpass filter, press D\n");
+	printf("To decrease cutoff frequency of stinger2 highpass filter, press S\n\n");
+	printf("To decrease/increase cutoff frequency of music1 lowpass filter, press R/T\n");
+	printf("To decrease/increase cutoff frequency of music1 highpass filter, press F/G\n\n");
+	printf("**************************\n\n");
 
-	if(run_unit_tests)
-	{
-		int i = 0;
-		for(; i < NUM_TESTS; ++i)
-		{
-			UNIT_TESTS[i]();
-		}
-	}
-
-	if(run_integration_test)
-	{
-		printf("Beginning Integration Test\n");
-		printf("**************************\n\n");
-		printf("To stop the test, press ESC\n\n");
-		printf("To play stinger1, press Q\n");
-		printf("To increase cutoff frequency of stinger1 lowpass filter, press E\n");
-		printf("To decrease cutoff frequency of stinger1 lowpass filter, press W\n\n");
-		printf("To play stinger2, press A\n");
-		printf("To increase cutoff frequency of stinger2 highpass filter, press D\n");
-		printf("To decrease cutoff frequency of stinger2 highpass filter, press S\n\n");
-		printf("To decrease/increase cutoff frequency of music1 lowpass filter, press R/T\n");
-		printf("To decrease/increase cutoff frequency of music1 highpass filter, press F/G\n\n");
-		printf("**************************\n\n");
-
-		test_integration();
-	}
+	test_integration();
 
     return 0;
 }

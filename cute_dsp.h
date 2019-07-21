@@ -27,6 +27,7 @@
 	Revision history:
 		1.0		(05/25/2019)	initial release: added lowpass and highpass implementation
 		1.1		(06/29/2019)	added internal memory pool, dsp context and mixers to be used by cute_sound
+		1.2		(07/12/2019)	bug fixes from integration testing
 */
 
 #if !defined(CUTE_DSP_H)
@@ -130,6 +131,18 @@ cd_mixer_def_t cd_make_mixer_def(const cd_lowpass_def_t* lp_def, const cd_highpa
 	creates a dsp mixer to be attached to playing sounds
 */
 cd_mixer_t* cd_make_mixer(cd_context_t* context, const cd_mixer_def_t* def);
+
+/*
+	sets the cutoff frequency of the lowpass filter on all channels of a mixer
+	@param cutoff must be greater than 0.
+*/
+void cd_set_lowpass_filter_cutoffs(cd_mixer_t* mixer, float cutoff);
+
+/*
+	sets the cutoff frequency of the highpass filter on all channels of a mixer
+	@param cutoff must be greater than 0.
+*/
+void cd_set_highpass_filter_cutoffs(cd_mixer_t* mixer, float cutoff);
 
 /*
 	called from the mix thread
@@ -509,13 +522,40 @@ cd_mixer_t* cd_make_mixer(cd_context_t* context, const cd_mixer_def_t* def)
 	return mixer;
 }
 
+void cd_set_lowpass_filter_cutoffs(cd_mixer_t* mixer, float cutoff)
+{
+	CUTE_DSP_ASSERT(mixer && cutoff >= 0.f);
+	cd_lowpass_t* lowpass = mixer->lowpass;
+	if (lowpass)
+	{
+		cd_set_lowpass_cutoff_frequency(lowpass, cutoff);
+		if (lowpass->next)
+		{
+			cd_set_lowpass_cutoff_frequency(lowpass->next, cutoff);
+		}
+	}
+}
+
+void cd_set_highpass_filter_cutoffs(cd_mixer_t* mixer, float cutoff)
+{
+	CUTE_DSP_ASSERT(mixer && cutoff >= 0.f);
+	cd_highpass_t* highpass = mixer->highpass;
+	if (highpass)
+	{
+		cd_set_highpass_cutoff_frequency(highpass, cutoff);
+		if (highpass->next)
+		{
+			cd_set_highpass_cutoff_frequency(highpass->next, cutoff);
+		}
+	}
+}
+
 float* cd_sample_mixer(cd_mixer_t* mixer, float* input_ptr, unsigned channel_num, unsigned sample_count)
 {
 	unsigned i = 0;
 	float* output = mixer->output_samples[channel_num];
-	
-	if(!input_ptr || !sample_count)
-		return input_ptr;
+	float* output_ptr = output;
+	memcpy(output, input_ptr, sample_count * sizeof(float));
 
 	//TODO: to optimize in the future:
 	// make sample functions into macros to process everything inline
@@ -524,35 +564,33 @@ float* cd_sample_mixer(cd_mixer_t* mixer, float* input_ptr, unsigned channel_num
 	if(mixer->lowpass)
 	{
 		cd_lowpass_t* lowpass = (channel_num == 0) ? mixer->lowpass : mixer->lowpass->next;
-/*
+
 		for(i = 0; i < sample_count; ++i)
 		{
-			//*output = cd_sample_lowpass(lowpass, *output);
+			*output = cd_sample_lowpass(lowpass, *output);
 			++output;
 		}
 
-		// reset the output ptr
-		output = mixer->output_samples[channel_num];
-		*/
+		output = output_ptr;
 	}
 
 	// process the highpass filter
 	if(mixer->highpass)
 	{
 		cd_highpass_t* highpass = (channel_num == 0) ? mixer->highpass : mixer->highpass->next;
+		float* output = mixer->output_samples[channel_num];
+		float* input = input_ptr;
 
 		for(i = 0; i < sample_count; ++i)
 		{
-			printf("NO");
 			*output = cd_sample_highpass(highpass, *output);
 			++output;
 		}
-		
-		// reset the output ptr
-		output = mixer->output_samples[channel_num];
+
+		output = output_ptr;
 	}
 
-	return output;
+	return output_ptr;
 }
 
 void cd_release_mixer(cd_context_t* context, cd_mixer_t** mixer_ptr)
