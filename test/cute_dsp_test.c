@@ -5,136 +5,338 @@
 
     cute_dsp_test.c - v1.0
 
-    To compile:
+    To compile (windows only):
 
-        gcc -o cute_dsp_test cute_dsp_test.c cute_dsp_audio_data.c
+        cl cute_dsp_test.c /EHsc User32.lib
 
     To run:
 
-        ./cute_dsp_test <input-file>.wav <options>
-
-        <input-file> is a simple 16 bit, 44.1kHZ .wav file to process
-        <options> can be any of the following:
-            -l = process the input with a lowpass filter, output-l.wav
-            -h = process the input with a highpass filter, output-h.wav
+        ./cute_dsp_test <option>
+		<option> can be either of the following:
+			-u = unit test: runs offline unit tests
+			-i = integration test: runs realtime integration test. actually runs cute_sound
+		if <option> isn't provided, unit tests are run first, followed by the integration test.
 
     Summary:
-        Meant as a test framework for cute_dsp.h to output .wav files that will 
-        demonstrate the features in the project.
+        Meant as a test framework for cute_dsp.h for integration with cute_sound.h
 
     Revision history:
-        1.0     (05/25/2019) initial release: 
+        1.0     (06/30/2019) initial release: 
 */
 
-#include "cute_dsp_audio_data.h"
+#define _CRT_SECURE_NO_WARNINGS
+
+#include <stdio.h>
 
 #define CUTE_DSP_IMPLEMENTATION
 #include "../cute_dsp.h"
 
-#include <stdio.h>
+#define CUTE_SOUND_IMPLEMENTATION
+#include "../../cute_headers/cute_sound.h"
 
-/* BEGIN TEST FUNCTIONS */
-static void process_low_pass(const cd_audio_data_t* in)
+#define CUTE_DSP_ASSERT_INTERNAL *(int*)0 = 0
+#define CUTE_DSP_ASSERT(X) do { if(!(X)) CUTE_DSP_ASSERT_INTERNAL; } while (0)
+
+/* BEGIN INTEGRATION TEST */
+
+// data on certain keys current and last frame status
+// each takes one bit, 1 for pressed, 0 for not
+struct
 {
-    cd_audio_data_t out = cd_make_audio_data(in->num_samples, in->bits_per_sample, in->sampling_rate);
+	unsigned q0 : 1;
+	unsigned q1 : 1;
+	unsigned w0 : 1;
+	unsigned w1 : 1;
+	unsigned e0 : 1;
+	unsigned e1 : 1;
+	unsigned r0 : 1;
+	unsigned r1 : 1;
+	unsigned t0 : 1;
+	unsigned t1 : 1;
+	unsigned a0 : 1;
+	unsigned a1 : 1;
+	unsigned s0 : 1;
+	unsigned s1 : 1;
+	unsigned d0 : 1;
+	unsigned d1 : 1;
+	unsigned f0 : 1;
+	unsigned f1 : 1;
+	unsigned g0 : 1;
+	unsigned g1 : 1;
+} g_inputs;
 
-    unsigned num_samples = in->num_samples;
-    unsigned change_index = num_samples / 4;
-    unsigned i = 0;
-    float cutoff = 4000.f;
+// called each frame of loop to check key presses
+// checks hardcoded keys and sets appropriate values in g_inputs
+void handle_input()
+{
+	// T
+	g_inputs.t1 = g_inputs.t0;
+	if(GetAsyncKeyState ('T'))
+		g_inputs.t0 = 1;
+	else
+		g_inputs.t0 = 0;
 
-    cd_lowpass_def_t def = cd_make_lowpass_def(cutoff, in->sampling_rate);
-    cd_lowpass_t* lpf = cd_make_lowpass_filter(&def);
+	// R
+	g_inputs.r1 = g_inputs.r0;
+	if(GetAsyncKeyState ('R'))
+		g_inputs.r0 = 1;
+	else
+		g_inputs.r0 = 0;
+	
+	// E
+	g_inputs.e1 = g_inputs.e0;
+	if(GetAsyncKeyState ('E'))
+		g_inputs.e0 = 1;
+	else
+		g_inputs.e0 = 0;
+	
+	// W
+	g_inputs.w1 = g_inputs.w0;
+	if(GetAsyncKeyState ('W'))
+		g_inputs.w0 = 1;
+	else
+		g_inputs.w0 = 0;
+	
+	// Q
+	g_inputs.q1 = g_inputs.q0;
+	if(GetAsyncKeyState ('Q'))
+		g_inputs.q0 = 1;
+	else
+		g_inputs.q0 = 0;
 
-    for(; i < num_samples; ++i)
-    {
-        out.data[i] = cd_sample_lowpass(lpf, in->data[i]);
-        if(i && i % change_index == 0)
-        {
-            cutoff /= 2.f;
-            cd_set_lowpass_cutoff_frequency(lpf, cutoff);
-        }
-    }
+	// G
+	g_inputs.g1 = g_inputs.g0;
+	if(GetAsyncKeyState ('G'))
+		g_inputs.g0 = 1;
+	else
+		g_inputs.g0 = 0;
 
-    cd_write_wav_file("output-l.wav", &out);
+	// F
+	g_inputs.f1 = g_inputs.f0;
+	if(GetAsyncKeyState ('F'))
+		g_inputs.f0 = 1;
+	else
+		g_inputs.f0 = 0;
+	
+	// D
+	g_inputs.d1 = g_inputs.d0;
+	if(GetAsyncKeyState ('D'))
+		g_inputs.d0 = 1;
+	else
+		g_inputs.d0 = 0;
+	
+	// S
+	g_inputs.s1 = g_inputs.s0;
+	if(GetAsyncKeyState ('S'))
+		g_inputs.s0 = 1;
+	else
+		g_inputs.s0 = 0;
+	
+	// A
+	g_inputs.a1 = g_inputs.a0;
+	if(GetAsyncKeyState ('A'))
+		g_inputs.a0 = 1;
+	else
+		g_inputs.a0 = 0;
+}
+#define BUTTON_IS_RELEASED(b0, b1) !g_inputs.b0 && g_inputs.b0 != g_inputs.b1
 
-    cd_release_lowpass(&lpf);
-    cd_release_audio_data(&out);
+static void test_integration()
+{
+	int frequency = 44000; // a good standard frequency for playing commonly saved OGG + wav files
+	int latency_in_Hz = 15; // a good latency, too high will cause artifacts, too low will create noticeable delays
+	int buffered_seconds = 5; // number of seconds the buffer will hold in memory. want this long enough in case of frame-delays
+	int use_playing_pool = 1; // non-zero uses high-level API, 0 uses low-level API
+	int num_elements_in_playing_pool = 5; // pooled memory array size for playing sounds
+
+	// create the dsp contexts
+	cd_context_def_t context_definition;
+	context_definition.playing_pool_count = num_elements_in_playing_pool;
+	context_definition.sampling_rate = (float)frequency;
+	cd_context_t* dsp_ctx = cd_make_context(context_definition);
+	CUTE_DSP_ASSERT(dsp_ctx);
+
+	// create the sound context
+	cs_context_t* sound_ctx = cs_make_context(GetConsoleWindow(), frequency, latency_in_Hz, buffered_seconds, num_elements_in_playing_pool);
+	cs_set_dsp_context(sound_ctx, dsp_ctx);
+
+	// set mix thread running
+	cs_spawn_mix_thread(sound_ctx);
+	cs_thread_sleep_delay(sound_ctx, 10);
+
+	// load audio files
+	cs_loaded_sound_t music1 = cs_load_wav("music1.wav");
+	cs_loaded_sound_t stinger1 = cs_load_wav("stinger1.wav");
+	cs_loaded_sound_t stinger2 = cs_load_wav("stinger2.wav");
+
+	// defs for highpass and lowpass
+	cd_lowpass_def_t lpdef = cd_make_lowpass_def(2000.f, (float)music1.sample_rate);
+	cd_highpass_def_t hpdef = cd_make_highpass_def(500.f, (float)music1.sample_rate);
+
+	// mixer for music track
+	cd_mixer_def_t mdef0;
+	mdef0.channel_count = music1.channel_count;
+	mdef0.has_highpass = 1;
+	mdef0.has_lowpass = 1;
+	mdef0.lowpass_def = lpdef;
+	mdef0.highpass_def = hpdef;
+	cd_mixer_t* mixer0 = cd_make_mixer(dsp_ctx, &mdef0);
+	CUTE_DSP_ASSERT(mixer0 && mixer0->lowpass && mixer0->highpass);
+
+	// mixer for stinger 1
+	cd_mixer_def_t mdef1;
+	mdef1.channel_count = stinger1.channel_count;
+	mdef1.has_highpass = 0;
+	mdef1.has_lowpass = 1;
+	lpdef.sampling_rate = (float)stinger1.sample_rate;
+	mdef1.lowpass_def = lpdef;
+	cd_mixer_t* mixer1 = cd_make_mixer(dsp_ctx, &mdef1);
+
+	// mixer for stinger 2
+	cd_mixer_def_t mdef2;
+	mdef2.channel_count = stinger2.channel_count;
+	mdef2.has_highpass = 1;
+	mdef2.has_lowpass = 0;
+	hpdef.sampling_rate = (float)stinger2.sample_rate;
+	mdef2.highpass_def = hpdef;
+	cd_mixer_t* mixer2 = cd_make_mixer(dsp_ctx, &mdef2);
+
+	// retrieve copies of the filters and cutoffs
+	cd_lowpass_t* mlp = mixer0->lowpass;
+	float mlp_cutoff = cd_get_lowpass_cutoff_frequency(mlp);
+	cd_highpass_t* mhp = mixer0->highpass;
+	float mhp_cutoff = cd_get_highpass_cutoff_frequency(mhp);
+	cd_lowpass_t* slp = mixer1->lowpass;
+	float slp_cutoff = cd_get_lowpass_cutoff_frequency(slp);
+	cd_highpass_t* shp = mixer2->highpass;
+	float shp_cutoff = cd_get_highpass_cutoff_frequency(shp);
+
+	// play sound defs to start playing audio
+	cs_play_sound_def_t def0 = cs_make_def(&music1);
+	cs_play_sound_def_t def1 = cs_make_def(&stinger1);
+	cs_play_sound_def_t def2 = cs_make_def(&stinger2);
+
+	// set mixers on play defs
+	def0.dsp_mixer = mixer0;
+	def0.looped = 1;
+	def1.dsp_mixer = mixer1;
+	def2.dsp_mixer = mixer2;
+
+	// start playing music
+	cs_play_sound(sound_ctx, def0);
+
+	// loop until triggered otherwise
+	for(;;)
+	{
+		// handle key up/down
+		handle_input();
+
+		// if user ever presses escape, break out
+		if(GetAsyncKeyState(VK_ESCAPE))
+		{
+			printf("QUITTING INTEGRATION_TEST\n");
+			break;
+		}
+
+		// music lpf
+		if(BUTTON_IS_RELEASED(t0, t1))
+		{
+			mlp_cutoff += 100.f;
+			cd_set_lowpass_filter_cutoffs(mixer0, mlp_cutoff);
+			printf("T PRESSED, music lpf cutoff: %.4f\n", mlp_cutoff);
+		}
+		else if(BUTTON_IS_RELEASED(r0, r1))
+		{
+			mlp_cutoff -= 100.f;
+			cd_set_lowpass_filter_cutoffs(mixer0, mlp_cutoff);
+			printf("R PRESSED, music lpf cutoff: %.4f\n", mlp_cutoff);
+		}
+
+		// music hpf
+		if(BUTTON_IS_RELEASED(g0, g1))
+		{
+			mhp_cutoff += 100.f;
+			cd_set_highpass_filter_cutoffs(mixer0, mhp_cutoff);
+			printf("G PRESSED, music hpf cutoff: %.4f\n", mhp_cutoff);
+		}
+		else if(BUTTON_IS_RELEASED(f0, f1))
+		{
+			mhp_cutoff -= 100.f;
+			cd_set_highpass_filter_cutoffs(mixer0, mhp_cutoff);
+			printf("F PRESSED, music hpf cutoff: %.4f\n", mhp_cutoff);
+		}
+
+		if(BUTTON_IS_RELEASED(q0, q1))
+		{
+			printf("Q PRESSED, playing stinger1\n");
+			cs_play_sound(sound_ctx, def1);
+		}
+
+		// stinger1 lpf
+		if(BUTTON_IS_RELEASED(e0, e1))
+		{
+			slp_cutoff += 100.f;
+			printf("E PRESSED, stinger1 lpf cutoff: %.4f\n", slp_cutoff);
+			cd_set_lowpass_filter_cutoffs(mixer1, slp_cutoff);
+		}
+		else if(BUTTON_IS_RELEASED(w0, w1))
+		{
+			slp_cutoff -= 100.f;
+			printf("W PRESSED, stinger1 lpf cutoff: %.4f\n", slp_cutoff);
+			cd_set_lowpass_filter_cutoffs(mixer1, slp_cutoff);
+		}
+
+		if(BUTTON_IS_RELEASED(a0, a1))
+		{
+			printf("A PRESSED, playing stinger2\n");
+			cs_play_sound(sound_ctx, def2);
+		}
+
+		// stinger2 hpf
+		if(BUTTON_IS_RELEASED(d0, d1))
+		{
+			shp_cutoff += 100.f;
+			printf("D PRESSED, stinger2 hpf cutoff: %.4f\n", shp_cutoff);
+			cd_set_highpass_filter_cutoffs(mixer2, shp_cutoff);
+		}
+		else if(BUTTON_IS_RELEASED(s0, s1))
+		{
+			shp_cutoff -= 100.f;
+			printf("S PRESSED, stinger2 hpf cutoff: %.4f\n", shp_cutoff);
+			cd_set_highpass_filter_cutoffs(mixer2, shp_cutoff);
+		}
+	}
+
+	// release contexts
+	cs_shutdown_context(sound_ctx);
+	cd_release_context(&dsp_ctx);
+
+	// free sounds
+	cs_free_sound(&music1);
+	cs_free_sound(&stinger1);
+	cs_free_sound(&stinger2);
 }
 
-static void process_high_pass(const cd_audio_data_t* in)
-{
-    cd_audio_data_t out = cd_make_audio_data(in->num_samples, in->bits_per_sample, in->sampling_rate);
-
-    unsigned num_samples = out.num_samples;
-    unsigned change_index = num_samples / 4;
-    unsigned i = 0;
-    float cutoff = 400.f;
-
-    cd_highpass_def_t def = cd_make_highpass_def(cutoff, in->sampling_rate);
-    cd_highpass_t* hpf = cd_make_highpass_filter(&def);
-
-    for(; i < num_samples; ++i)
-    {
-        out.data[i] = cd_sample_highpass(hpf, in->data[i]);
-        if(i && i % change_index == 0)
-        {
-            cutoff *= 2.f;
-            cd_set_highpass_cutoff_frequency(hpf, cutoff);
-        }
-    }
-
-    cd_write_wav_file("output-h.wav", &out);
-
-    cd_release_highpass(&hpf);
-    cd_release_audio_data(&out);
-}
-/* END TEST FUNCTIONS */
-
-/* BEGIN OPTIONS DEFINITIONS */
-typedef void (*process_func)(const cd_audio_data_t* );
-
-typedef struct process_option
-{
-    char option;
-    process_func func;
-} process_option;
-
-static const unsigned NUM_OPS = 2;
-static const process_option OPS[] =
-{
-    {'l', process_low_pass},
-    {'h', process_high_pass}
-};
-/* END OPTIONS DEFINITIONS */
+/* END INTEGRATION TEST */
 
 /* BEGIN MAIN */
 int main(int argc, char** argv)
 {
-    const char* filename = argv[1];
-    unsigned i = 2;
-    unsigned length = argc;
-    cd_audio_data_t in_data = cd_read_wav_file(filename);
+	printf("Beginning Integration Test\n");
+	printf("**************************\n\n");
+	printf("To stop the test, press ESC\n\n");
+	printf("To play stinger1, press Q\n");
+	printf("To increase cutoff frequency of stinger1 lowpass filter, press E\n");
+	printf("To decrease cutoff frequency of stinger1 lowpass filter, press W\n\n");
+	printf("To play stinger2, press A\n");
+	printf("To increase cutoff frequency of stinger2 highpass filter, press D\n");
+	printf("To decrease cutoff frequency of stinger2 highpass filter, press S\n\n");
+	printf("To decrease/increase cutoff frequency of music1 lowpass filter, press R/T\n");
+	printf("To decrease/increase cutoff frequency of music1 highpass filter, press F/G\n\n");
+	printf("**************************\n\n");
 
-    /* process each option provided */
-    for(; i < length; ++i)
-    {
-        const char* next_arg = argv[i];
-        char next_option = next_arg[1];
-        unsigned j = 0;
+	test_integration();
 
-        /* find the option and call the process func */
-        for(; j < NUM_OPS; ++j)
-        {
-            if(OPS[j].option == next_option)
-            {
-                OPS[j].func(&in_data);
-                break;
-            }
-        }
-    }
-
-    cd_release_audio_data(&in_data);
     return 0;
 }
 /* END MAIN */
