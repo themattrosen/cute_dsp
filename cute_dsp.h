@@ -8,6 +8,7 @@
 	To create implementation (the function definitions)
 		#define CUTE_DSP_IMPLEMENTATION
 	in *one* C/CPP file (translation unit) that includes this file
+	For more details on integration with cute_sound, read the README.md
 
 	Summary:
 		cute_dsp is a C API for various DSP effects suitable for video games and
@@ -131,6 +132,11 @@ cd_mixer_def_t cd_make_mixer_def(const cd_lowpass_def_t* lp_def, const cd_highpa
 	creates a dsp mixer to be attached to playing sounds
 */
 cd_mixer_t* cd_make_mixer(cd_context_t* context, const cd_mixer_def_t* def);
+
+/*
+	callback to create a mixer from the play_sound_def
+*/
+void* cd_make_mixer_callback(void* context, const void* def);
 
 /*
 	sets the cutoff frequency of the lowpass filter on all channels of a mixer
@@ -522,6 +528,16 @@ cd_mixer_t* cd_make_mixer(cd_context_t* context, const cd_mixer_def_t* def)
 	return mixer;
 }
 
+void* cd_make_mixer_callback(void* context, const void* def)
+{
+	if(context && def)
+	{
+		return cd_make_mixer((cd_context_t *)context, (const cd_mixer_def_t *)def);
+	}
+
+	return NULL;
+}
+
 void cd_set_lowpass_filter_cutoffs(cd_mixer_t* mixer, float cutoff)
 {
 	CUTE_DSP_ASSERT(mixer && cutoff >= 0.f);
@@ -624,6 +640,14 @@ void cd_release_mixer(cd_context_t* context, cd_mixer_t** mixer_ptr)
 
 	cd_memory_pool_free(&context->mixer_pool, mixer);
 	*mixer_ptr = 0;
+}
+
+void cd_release_mixer_callback(void* ctx, void** mixer_ptr)
+{
+	if(ctx && mixer_ptr)
+	{
+		cd_release_mixer((cd_context_t *)ctx, (cd_mixer_t **)mixer_ptr);
+	}
 }
 
 /* END MIXER IMPLEMENTATION */

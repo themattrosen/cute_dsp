@@ -38,6 +38,7 @@
 #define CUTE_DSP_ASSERT(X) do { if(!(X)) CUTE_DSP_ASSERT_INTERNAL; } while (0)
 
 /* BEGIN INTEGRATION TEST */
+#define PLAYING_POOL_SIZE 10
 
 // data on certain keys current and last frame status
 // each takes one bit, 1 for pressed, 0 for not
@@ -147,13 +148,15 @@ static void test_integration()
 	int latency_in_Hz = 15; // a good latency, too high will cause artifacts, too low will create noticeable delays
 	int buffered_seconds = 5; // number of seconds the buffer will hold in memory. want this long enough in case of frame-delays
 	int use_playing_pool = 1; // non-zero uses high-level API, 0 uses low-level API
-	int num_elements_in_playing_pool = 5; // pooled memory array size for playing sounds
+	int num_elements_in_playing_pool = PLAYING_POOL_SIZE; // pooled memory array size for playing sounds
 
 	// create the dsp contexts
 	cd_context_def_t context_definition;
 	context_definition.playing_pool_count = num_elements_in_playing_pool;
 	context_definition.sampling_rate = (float)frequency;
 	cd_context_t* dsp_ctx = cd_make_context(context_definition);
+	cs_make_dsp_mixer = cd_make_mixer_callback;
+	cs_release_dsp_mixer = cd_release_mixer_callback;
 	CUTE_DSP_ASSERT(dsp_ctx);
 
 	// create the sound context
@@ -180,8 +183,6 @@ static void test_integration()
 	mdef0.has_lowpass = 1;
 	mdef0.lowpass_def = lpdef;
 	mdef0.highpass_def = hpdef;
-	cd_mixer_t* mixer0 = cd_make_mixer(dsp_ctx, &mdef0);
-	CUTE_DSP_ASSERT(mixer0 && mixer0->lowpass && mixer0->highpass);
 
 	// mixer for stinger 1
 	cd_mixer_def_t mdef1;
@@ -190,7 +191,6 @@ static void test_integration()
 	mdef1.has_lowpass = 1;
 	lpdef.sampling_rate = (float)stinger1.sample_rate;
 	mdef1.lowpass_def = lpdef;
-	cd_mixer_t* mixer1 = cd_make_mixer(dsp_ctx, &mdef1);
 
 	// mixer for stinger 2
 	cd_mixer_def_t mdef2;
@@ -199,17 +199,6 @@ static void test_integration()
 	mdef2.has_lowpass = 0;
 	hpdef.sampling_rate = (float)stinger2.sample_rate;
 	mdef2.highpass_def = hpdef;
-	cd_mixer_t* mixer2 = cd_make_mixer(dsp_ctx, &mdef2);
-
-	// retrieve copies of the filters and cutoffs
-	cd_lowpass_t* mlp = mixer0->lowpass;
-	float mlp_cutoff = cd_get_lowpass_cutoff_frequency(mlp);
-	cd_highpass_t* mhp = mixer0->highpass;
-	float mhp_cutoff = cd_get_highpass_cutoff_frequency(mhp);
-	cd_lowpass_t* slp = mixer1->lowpass;
-	float slp_cutoff = cd_get_lowpass_cutoff_frequency(slp);
-	cd_highpass_t* shp = mixer2->highpass;
-	float shp_cutoff = cd_get_highpass_cutoff_frequency(shp);
 
 	// play sound defs to start playing audio
 	cs_play_sound_def_t def0 = cs_make_def(&music1);
@@ -217,13 +206,27 @@ static void test_integration()
 	cs_play_sound_def_t def2 = cs_make_def(&stinger2);
 
 	// set mixers on play defs
-	def0.dsp_mixer = mixer0;
+	def0.dsp_mixer_def = &mdef0;
 	def0.looped = 1;
-	def1.dsp_mixer = mixer1;
-	def2.dsp_mixer = mixer2;
+	def1.dsp_mixer_def = &mdef1;
+	def2.dsp_mixer_def = &mdef2;
 
 	// start playing music
-	cs_play_sound(sound_ctx, def0);
+	cs_playing_sound_t* music_playing = cs_play_sound(sound_ctx, def0);
+
+	cd_mixer_t* mixer0 = music_playing->dsp_mixer;
+	cd_mixer_t* mixer1 = 0;
+	cd_mixer_t* mixer2 = 0;
+
+	// retrieve copies of the filters and cutoffs
+	cd_lowpass_t* mlp = mixer0->lowpass;
+	float mlp_cutoff = cd_get_lowpass_cutoff_frequency(mlp);
+	cd_highpass_t* mhp = mixer0->highpass;
+	float mhp_cutoff = cd_get_highpass_cutoff_frequency(mhp);
+	cd_lowpass_t* slp = 0; // = mixer1->lowpass;
+	float slp_cutoff = 2000.f; // = cd_get_lowpass_cutoff_frequency(slp);
+	cd_highpass_t* shp = 0; // = mixer2->highpass;
+	float shp_cutoff = 500.f; // = cd_get_highpass_cutoff_frequency(shp);
 
 	// loop until triggered otherwise
 	for(;;)
@@ -269,17 +272,20 @@ static void test_integration()
 		if(BUTTON_IS_RELEASED(q0, q1))
 		{
 			printf("Q PRESSED, playing stinger1\n");
-			cs_play_sound(sound_ctx, def1);
+			cs_playing_sound_t* stinger = cs_play_sound(sound_ctx, def1);
+			mixer1 = stinger->dsp_mixer;
+			slp = mixer1->lowpass;
+			slp_cutoff = cd_get_lowpass_cutoff_frequency(slp);
 		}
 
 		// stinger1 lpf
-		if(BUTTON_IS_RELEASED(e0, e1))
+		if(BUTTON_IS_RELEASED(e0, e1) && mixer1)
 		{
 			slp_cutoff += 100.f;
 			printf("E PRESSED, stinger1 lpf cutoff: %.4f\n", slp_cutoff);
 			cd_set_lowpass_filter_cutoffs(mixer1, slp_cutoff);
 		}
-		else if(BUTTON_IS_RELEASED(w0, w1))
+		else if(BUTTON_IS_RELEASED(w0, w1) && mixer1)
 		{
 			slp_cutoff -= 100.f;
 			printf("W PRESSED, stinger1 lpf cutoff: %.4f\n", slp_cutoff);
@@ -289,17 +295,20 @@ static void test_integration()
 		if(BUTTON_IS_RELEASED(a0, a1))
 		{
 			printf("A PRESSED, playing stinger2\n");
-			cs_play_sound(sound_ctx, def2);
+			cs_playing_sound_t* stinger = cs_play_sound(sound_ctx, def2);
+			mixer2 = stinger->dsp_mixer;
+			shp = mixer2->highpass;
+			shp_cutoff = cd_get_highpass_cutoff_frequency(shp);
 		}
 
 		// stinger2 hpf
-		if(BUTTON_IS_RELEASED(d0, d1))
+		if(BUTTON_IS_RELEASED(d0, d1) && mixer2)
 		{
 			shp_cutoff += 100.f;
 			printf("D PRESSED, stinger2 hpf cutoff: %.4f\n", shp_cutoff);
 			cd_set_highpass_filter_cutoffs(mixer2, shp_cutoff);
 		}
-		else if(BUTTON_IS_RELEASED(s0, s1))
+		else if(BUTTON_IS_RELEASED(s0, s1) && mixer2)
 		{
 			shp_cutoff -= 100.f;
 			printf("S PRESSED, stinger2 hpf cutoff: %.4f\n", shp_cutoff);
@@ -333,6 +342,7 @@ int main(int argc, char** argv)
 	printf("To decrease cutoff frequency of stinger2 highpass filter, press S\n\n");
 	printf("To decrease/increase cutoff frequency of music1 lowpass filter, press R/T\n");
 	printf("To decrease/increase cutoff frequency of music1 highpass filter, press F/G\n\n");
+	printf("Note: Size of playing pool is set to %d, to increase/decrease, need to set PLAYING_POOL_SIZE and recompile.\n", PLAYING_POOL_SIZE);
 	printf("**************************\n\n");
 
 	test_integration();
