@@ -31,7 +31,7 @@ Above the include to cute_dsp, there must be one place where you `#define CUTE_D
 ### cd_context_t
 Before or after creating your `cs_context_t` cute sound context, you will need to create a cute_dsp context.
 
-```
+```cpp
 cs_context_t* sound_context = cs_make_context(...);
 
 cd_context_def_t dsp_context_definition; // statically create dsp context
@@ -57,7 +57,13 @@ cd_release_context(&dsp_context);
 
 ### cd_mixer_t
 To create a DSP mixer to attach to a playing sound do the following:
-```
+```cpp
+// somewhere in your init code, you need to set the proper callbacks in cute_sound 
+// for playing sounds to create mixers properly
+cs_make_dsp_mixer = cd_make_mixer_callback;
+cs_release_dsp_mixer = cd_release_mixer_callback;
+
+// you can statically create the mixer def
 cd_mixer_def_t mixer_def;
 
 // specify the number of audio channels from cs_loaded_sound_t.
@@ -70,28 +76,29 @@ mixer_def.has_lowpass = 1;
 // set the definitions for filters you want
 mixer_def.lowpass_def = lowpass_def;
 
-// create the mixer
-cd_mixer_t* mixer = cd_make_mixer(dsp_context, &mixer_def);
+// add the mixer to your play_sound_def;
+cs_play_sound_def_t play_sound_def = cs_make_def(&music1);
+play_sound_def.dsp_mixer_def = &mixer_def;
 
-// for the mixer to do anything, attach it to the cs_play_sound_def_t before playing a sound
-cs_play_sound_def_t play_sound_def = cs_make_def(&loaded_sound);
-play_sound_def.dsp_mixer = mixer;
+// when you call cs_play_sound, a mixer will be created via the callback
+// from the provided mixer def
+cs_playing_sound_t* playing_sound = cs_play_sound(sound_ctx, play_sound_def);
+cd_mixer_t* dsp_mixer = playing_sound->dsp_mixer;
 
-// calling play sound on a play_sound_def that has a dsp mixer will
-// automatically use the mixer to process the sound.
-cs_play_sound(sound_context, play_sound_def);
+// from this mixer, you can change the values for your filters
+
 ```
 
 ### cd_lowpass_t/cd_highpass_t
 To create a lowpass or highpass filter attached to a DSP mixer, you must first create a def for it:
-```
+```cpp
 cd_lowpass_def_t lowpass_def = cd_make_lowpass_def(cutoff_frequency, (float)sampling_rate);
 cd_highpass_def_t highpass_def = cd_make_highpass_def(cutoff_frequency, (float)sampling_rate);
 ```
 Then you can set this as the low/highpass def when creating a cd_mixer_def_t, as shown above
   
 In order to modify the cutoff frequencies of the lowpass/highpass filters, you can either call a setter directly from the mixer, or it can be done on individual filters manually. To set the cutoff frequencies, any of the following functions can be called:
-```
+```cpp
 void cd_set_lowpass_filter_cutoffs(cd_mixer_t* mixer, float cutoff);
 void cd_set_lowpass_cutoff_frequency(cd_lowpass_t* filter, float cutoff_freq_in_hz);
 float cd_get_lowpass_cutoff_frequency(const cd_lowpass_t* filter);

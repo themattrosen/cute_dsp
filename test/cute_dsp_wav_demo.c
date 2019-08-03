@@ -112,6 +112,11 @@ static const process_option OPS[] =
 /* BEGIN MAIN */
 int main(int argc, char** argv)
 {
+    if(argc < 2)
+    {
+        printf("NO WAVE FILE SPECIFIED!\n");
+        return 1;
+    }
     const char* filename = argv[1];
     unsigned i = 2;
     unsigned length = argc;
@@ -122,24 +127,36 @@ int main(int argc, char** argv)
     context_def.sampling_rate = in_data.sampling_rate;
     context = cd_make_context(context_def);
 
-    /* process each option provided */
-    for(; i < length; ++i)
+    /* if no options provided, do all tests */
+    if(length == 2)
     {
-        const char* next_arg = argv[i];
-        char next_option = next_arg[1];
-        unsigned j = 0;
-
-        /* find the option and call the process func */
-        for(; j < NUM_OPS; ++j)
+        for(i = 0; i < NUM_OPS; ++i)
         {
-            if(OPS[j].option == next_option)
+            OPS[i].func(context, &in_data);
+        }
+    }
+    else
+    {
+        /* process each option provided */
+        for(; i < length; ++i)
+        {
+            const char* next_arg = argv[i];
+            char next_option = next_arg[1];
+            unsigned j = 0;
+
+            /* find the option and call the process func */
+            for(; j < NUM_OPS; ++j)
             {
-                OPS[j].func(context, &in_data);
-                break;
+                if(OPS[j].option == next_option)
+                {
+                    OPS[j].func(context, &in_data);
+                    break;
+                }
             }
         }
     }
 
+    cd_release_context(&context);
     cd_release_audio_data(&in_data);
     return 0;
 }
