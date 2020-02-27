@@ -4,15 +4,15 @@ cute_dsp is a C API for various DSP effects suitable for video games and
 meant to interface directly with the cute_sound library created by Randy Gaul.
 The scope of cute_dsp will eventually include:
 
-* lowpass filter
-* highpass filter
-* white noise injection
-* lowpass filtering with resonances
-* wind noise presets for resonant filters
-* realtime reverb
-* echo filter
-* randomization settings
-* filter presets
+* Lowpass filter
+* Highpass filter
+* White noise injection
+* Lowpass filtering with resonances
+* Wind noise presets for resonant filters
+* Realtime reverb
+* Echo filter
+* Randomization settings
+* Filter presets
 
 ## Implemented Features
 
@@ -22,14 +22,21 @@ Uses a second order Butterworth filter with a 6dB per octave rolloff.
 ### Highpass Filtering
 Uses a second order Butterworth filter with a 6dB per octave rolloff, converted from the lowpass filter equation.
 
+### Echo Filtering
+Uses two ring buffers for delay of input and output samples. There are three designable parameters:
+ 
+* Delay time
+* Mix factor (echo loudness)
+* Feedback factor (amount that echoes feedback into themselves)
+
 ## Usage
 cute_dsp must be used concurrently with cute_sound. 
   
-To set up cute_dsp, `#include "cute_dsp.h"` somewhere above your include for cute_sound.h.
+To set up cute_dsp, `#include "cute_dsp.h"` somewhere below your include for cute_sound.h.
 Above the include to cute_dsp, there must be one place where you `#define CUTE_DSP_IMPLEMENTATION`.
   
 ### cd_context_t
-Before or after creating your `cs_context_t` cute sound context, you will need to create a cute_dsp context.
+After creating your `cs_context_t` cute sound context, you will need to create a cute_dsp context.
 
 ```cpp
 cs_context_t* sound_context = cs_make_context(...);
@@ -42,9 +49,11 @@ dsp_context_definition.playing_pool_count = num_elements_in_playing_pool;
 // set dsp sampling rate
 dsp_context_definition.sampling_rate = (float)frequency;
 
-// enable filters that you want enable cute_dsp to use
-dsp_context_definition.use_highpass = 0;
+// set which filters you would like to use and some optional parameters
+dsp_context_definition.use_highpass = 1;
 dsp_context_definition.use_lowpass = 1;
+dsp_context_definition.use_echo = 0;
+dsp_context_definition.echo_max_delay_s = 0.f;
 
 // allocate the context
 cd_context_t* dsp_context = cd_make_context(dsp_context_definition);
@@ -65,4 +74,17 @@ void cd_set_highpass_cutoff(cs_playing_sound_t* playing_sound, float cutoff_in_h
 
 float cd_get_lowpass_cutoff(const cs_playing_sound_t* playing_sound);
 float cd_get_highpass_cutoff(const cs_playing_sound_t* playing_sound);
+```
+
+### cd_echo_t
+To modify the parameters of the echo filter:
+```cpp
+void cd_set_echo_delay(cs_playing_sound_t* playing_sound, float t);
+void cd_set_echo_mix(cs_playing_sound_t* playing_sound, float a);
+void cd_set_echo_feedback(cs_playing_sound_t* playing_sound, float b);
+
+float cd_get_echo_delay(const cs_playing_sound_t* playing_sound);
+float cd_get_echo_mix(const cs_playing_sound_t* playing_sound);
+float cd_get_echo_feedback(const cs_playing_sound_t* playing_sound);
+float cd_get_echo_max_delay(const cs_playing_sound_t* playing_sound);
 ```

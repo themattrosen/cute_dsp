@@ -52,3 +52,7 @@ Mkfile.old
 dkms.conf
 
 test/cute_dsp_test/
+
+test/cute_dsp_vs/.vs/cute_dsp_vs/v15/
+
+test/cute_dsp_vs/

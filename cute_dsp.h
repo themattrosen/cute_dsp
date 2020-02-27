@@ -30,6 +30,7 @@
 		1.1		(06/29/2019)	added internal memory pool, dsp context and mixers to be used by cute_sound
 		1.2		(07/12/2019)	bug fixes from integration testing
 		1.3 	(09/02/2019)	added cute_sound plugin interface
+		1.4		(02/26/2020)	added echo filter plugin
 */
 #ifndef CUTE_SOUND_H
 #	error Please include cute_sound.h before including cute_dsp.h.
@@ -49,6 +50,12 @@ cs_plugin_interface_t cd_make_lowpass_plugin();
 	Called internally, but exposed for use if needed.
 */
 cs_plugin_interface_t cd_make_highpass_plugin();
+
+/*
+	Helper function to create a plugin interface for the echo filter.
+	Called internally, but exposed for use if needed.
+*/
+cs_plugin_interface_t cd_make_echo_plugin();
 /* END PLUGIN INTERFACE FUNCTIONS */
 
 /* BEGIN FORWARD DECLARATIONS */
@@ -74,7 +81,20 @@ typedef struct cd_lowpass_t cd_lowpass_t;
 struct cd_highpass_t;
 typedef struct cd_highpass_t cd_highpass_t;
 
+/*
+	cute_dsp echo filter type
+	Implemented using a ring buffer.
+	Designable parameters:
+		delay    - echo delay time in seconds
+		mix      - mix factor of the loudness of the echoes
+		feedback - amount that the echoes feed back into each other
+*/
+struct cd_echo_t;
+typedef struct cd_echo_t cd_echo_t;
+
 #define CUTE_DSP_MAX_FRAME_LENGTH 4096
+#define CUTE_DSP_DEFAULT_ECHO_MAX_DELAY 0.5f
+
 /* END FORWARD DECLARATIONS */
 
 /* BEGIN DSP CONTEXT API */
@@ -89,26 +109,36 @@ typedef struct cd_context_def_t
 	{
 		unsigned int use_lowpass : 1;
 		unsigned int use_highpass : 1;
+		unsigned int use_echo : 1;
 	};
+
+	// optional parameters
+	float echo_max_delay_s;	// set to 0 to use default of 0.5s
 } cd_context_def_t;
 
-cd_context_t* cd_make_context(cs_context_t* sound_ctx, cd_context_def_t);
+/*
+	Allocatees the singleton dsp context that manages memory for all the filters.
+*/
+cd_context_t* cd_make_context(cs_context_t* sound_ctx, cd_context_def_t def);
 
+/*
+	Releases all the memory associated with cute_dsp.
+*/
 void cd_release_context(cd_context_t** context);
+
 /* END DSP CONTEXT API */
 
 /* BEGIN LOW PASS FILTER API */
 
 /*
-	TODO
+	constructs a plugin interface for the lowpass filter
 */
 cs_plugin_interface_t cd_make_lowpass_plugin();
 
 /*
-	dynamically allocates a lowpass filter from a lowpass_def
-	called via 
-	cd_lowpass_def_t def = cd_make_lowpass_def(freq, rate);
-	cd_lowpass_t* filter = cd_make_lowpass_filter(context, &def);
+	Constructs a lowpass filter from the dsp context's memory pool.
+	Initialized with cutoff frequency 20000Hz so its effects are inaudible 
+	unless you call cd_set_lowpass_cutoff(playing_sound, hz).
 */
 cd_lowpass_t* cd_make_lowpass_filter(cd_context_t* context);
 
@@ -142,19 +172,16 @@ float cd_get_lowpass_cutoff_frequency(const cd_lowpass_t* filter);
 float cd_get_lowpass_cutoff(const cs_playing_sound_t* playing_sound);
 
 /*
-	Processes the next sample of the given filter.
-	@param input next sample from the signal chain
-	@return the input sample processed by the lowpass filter
+	Processes the next audio frame using the given lowpass filter.
 */
 void cd_sample_lowpass(cd_context_t* context, cd_lowpass_t* filter, const float* input, float** output, unsigned num_samples);
 /* END LOWPASS FILTER API */
 
 /* BEGIN HIGHPASS FILTER API */
 /*
-	dynamically allocates a highpass filter from a lowpass_def
-	called via 
-	cd_highpass_def_t def = cd_make_highpass_def(freq, rate);
-	cd_highpass_t* filter = cd_make_highpass_filter(context, &def);
+	Constructs a highpass filter from the dsp context's memory pool.
+	Initialized with cutoff frequency 20Hz so its effects are inaudible 
+	unless you call cd_set_highpass_cutoff(playing_sound, hz).
 */
 cd_highpass_t* cd_make_highpass_filter(cd_context_t* context);
 
@@ -188,13 +215,81 @@ float cd_get_highpass_cutoff_frequency(const cd_highpass_t* filter);
 float cd_get_highpass_cutoff(const cs_playing_sound_t* playing_sound);
 
 /*
-	Processes the next sample of the given filter.
-	@param input next sample from the signal chain
-	@return the input sample processed by the highpass filter
+	Processes the next audio frame with the given highpass filter
 */
 void cd_sample_highpass(cd_context_t* context, cd_highpass_t* filter, const float* input, float** output, unsigned num_samples);
 
 /* END HIGHPASS FILTER API */
+
+/* BEGIN ECHO FILTER API */
+/*
+	Constructs an echo filter from the dsp context's memory pool.
+	Echo filters have two ring buffers that are both dynamically allocated, 
+		which can cause cache misses in the audio thread.
+*/
+cd_echo_t* cd_make_echo_filter(cd_context_t* context);
+
+/*
+	Releases memory for echo ring buffers, adds echo filter back to the
+		context memory pool.
+*/
+void cd_release_echo_filter(cd_context_t* context, cd_echo_t** filter);
+
+/*
+	Sets the delay time of the echo filter.
+	Limited by the max delay set as a parameter in the context.
+		Max delay can be retrieved via cd_get_echo_max_delay(playing_sound);
+	@param t
+		Delay time in seconds.
+*/
+void cd_set_echo_delay(cs_playing_sound_t* playing_sound, float t);
+
+/*
+	Sets the mix factor of the echo filter.
+	Effectively is the loudness of the delayed samples.
+	@param a
+		Delay mix factor. Generally between 0 and 1.
+*/
+void cd_set_echo_mix(cs_playing_sound_t* playing_sound, float a);
+
+/*
+	Sets the feedback factor of the echo filter.
+	Effectively is the amount that the echoes will echo on themselves.
+	@param b
+		Feedback factor. Generally between 0 and 1.
+*/
+void cd_set_echo_feedback(cs_playing_sound_t* playing_sound, float b);
+
+/*
+	@return 
+		Retrieves the max delay time for echo filters.
+*/
+float cd_get_echo_max_delay(const cs_playing_sound_t* playing_sound);
+
+/*
+	@return
+		Retrieves the delay time for the given filter in seconds.
+*/
+float cd_get_echo_delay(const cs_playing_sound_t* playing_sound);
+
+/*
+	@return
+		Retrieves the echo filter's delay mix factor.
+*/
+float cd_get_echo_mix(const cs_playing_sound_t* playing_sound);
+
+/*
+	@return
+		Retrieves the echo filter's feedback factor
+*/
+float cd_get_echo_feedback(const cs_playing_sound_t* playing_sound);
+
+/*
+	Processes the next audio frame with the given echo filter.
+*/
+void cd_sample_echo(cd_context_t* context, cd_echo_t* filter, const float* input, float** output, unsigned num_samples);
+
+/* END ECHO FILTER API */
 
 #define CUTE_DSP_H
 #endif
@@ -210,7 +305,7 @@ void cd_sample_highpass(cd_context_t* context, cd_highpass_t* filter, const floa
 /* HELPER MACROS */
 #if !defined(CUTE_DSP_ALLOC)
 	#include <stdlib.h> // malloc, free
-	#include <string.h> // memcpy
+	#include <string.h> // memcpy, memset
 	#define CUTE_DSP_ALLOC(size, mem_ctx) malloc(size)
 	#define CUTE_DSP_FREE(mem, mem_ctx)   free(mem)
 #endif
@@ -227,6 +322,7 @@ void cd_sample_highpass(cd_context_t* context, cd_highpass_t* filter, const floa
 	#define CUTE_DSP_PI				(3.1415926f)
 	#define CUTE_DSP_SQRT_2 		(1.4142136f)
 	#define CUTE_DSP_CLAMP(val, least, most) ( (val) < (least) ? (least) : ( (val) > (most) ? (most) : (val) ) )
+	#define CUTE_DSP_LERP_FLOAT(start, end, factor) ((start) + (factor) * ((end) - (start)))
 
 	/* more here */
 #endif
@@ -235,7 +331,6 @@ void cd_sample_highpass(cd_context_t* context, cd_highpass_t* filter, const floa
 	#define CUTE_DSP_DEFINES
 	#define CUTE_DSP_MONO (1)
 	#define CUTE_DSP_STEREO (2)
-	#define CUTE_DSP_MAX_FRAME_LENGTH (4096)
 	#define CUTE_DSP_INVALID_PLUGIN_ID (-1)
 
 	// default cutoff frequencies for LPF and HPF chosen 
@@ -268,18 +363,30 @@ typedef struct cd_memory_pool_def_t
 	unsigned max_objects;
 } cd_memory_pool_def_t;
 
+typedef struct cd_ring_buffer_t
+{
+	float* buffer;
+	int current_index;
+	int max_elements;
+} cd_ring_buffer_t;
+
 typedef struct cd_context_t
 {
 	float sampling_rate;
 	unsigned channel_count;
 	cd_memory_pool_t lowpass_filters;
 	cd_memory_pool_t highpass_filters;
+	cd_memory_pool_t echo_filters;
 	unsigned pool_size;
 	cs_plugin_id_t lowpass_id;
 	cs_plugin_id_t highpass_id;
+	cs_plugin_id_t echo_id;
 	float* current_output;
 	float output1[CUTE_DSP_MAX_FRAME_LENGTH * CUTE_DSP_STEREO]; // number of samples is frames * channels
 	float output2[CUTE_DSP_MAX_FRAME_LENGTH * CUTE_DSP_STEREO];
+
+	// optional filter default parameters
+	float echo_max_delay_s;
 } cd_context_t;
 
 static cd_context_t* g_dsp_context = 0;
@@ -310,6 +417,18 @@ typedef struct cd_highpass_t
 	float y1_coeff;
 	float y2_coeff;
 } cd_highpass_t;
+
+typedef struct cd_echo_t
+{
+	struct cd_echo_t* next;
+	cd_ring_buffer_t xvalues;
+	cd_ring_buffer_t yvalues;
+	float mix;
+	float feedback;
+	float offset;
+	float sampling_rate;
+	float max_samples;
+} cd_echo_t;
 
 /* END OPAQUE STRUCT IMPLEMENTATION */
 /* BEGIN FUNCTION IMPLEMENTATION */
@@ -449,6 +568,78 @@ cs_plugin_interface_t cd_make_highpass_plugin()
 
 	return plugin;
 }
+
+static void cd_echo_on_make_playing_sound(cs_context_t* cs_ctx, void* plugin_instance, void** playing_sound_udata, const cs_playing_sound_t* sound)
+{
+	cd_context_t* ctx = (cd_context_t*)plugin_instance;
+	switch (sound->loaded_sound->channel_count)
+	{
+	case 1:
+	{
+		cd_echo_t* echo = cd_make_echo_filter(ctx);
+		*playing_sound_udata = echo;
+		break;
+	}
+	case 2:
+	{
+		cd_echo_t* echo = cd_make_echo_filter(ctx);
+		*playing_sound_udata = echo;
+		echo->next = cd_make_echo_filter(ctx);
+		break;
+	}
+	}
+
+	// unused parameters
+	(void)cs_ctx;
+	(void)sound;
+}
+
+static void cd_echo_on_free_playing_sound(cs_context_t* cs_ctx, void* plugin_instance, void* playing_sound_udata, const cs_playing_sound_t* sound)
+{
+	cd_context_t* ctx = (cd_context_t*)plugin_instance;
+	cd_echo_t* filter = (cd_echo_t*)playing_sound_udata;
+	if (filter->next)
+	{
+		cd_release_echo_filter(ctx, &(filter->next));
+	}
+	cd_release_echo_filter(ctx, &filter);
+
+	// unused parameters
+	(void)cs_ctx;
+	(void)sound;
+}
+
+static void cd_echo_on_mix(cs_context_t* cs_ctx, void* plugin_instance, int channel_index, const float* samples_in, int sample_count, float** samples_out, void* playing_sound_udata, const cs_playing_sound_t* sound)
+{
+	cd_echo_t* filter = 0;
+	cd_context_t* context = (cd_context_t*)plugin_instance;
+	switch (channel_index)
+	{
+	case 0:
+		filter = (cd_echo_t*)playing_sound_udata;
+		break;
+	case 1:
+		filter = (cd_echo_t*)playing_sound_udata;
+		filter = filter->next;
+		break;
+	}
+	cd_sample_echo(context, filter, samples_in, samples_out, (unsigned)sample_count);
+
+	// unused parameters
+	(void)cs_ctx;
+	(void)sound;
+}
+
+cs_plugin_interface_t cd_make_echo_plugin(void)
+{
+	cs_plugin_interface_t plugin;
+	plugin.plugin_instance = cd_get_context();
+	plugin.on_make_playing_sound_fn = cd_echo_on_make_playing_sound;
+	plugin.on_free_playing_sound_fn = cd_echo_on_free_playing_sound;
+	plugin.on_mix_fn = cd_echo_on_mix;
+
+	return plugin;
+}
 /* END PLUGIN INTERFACE IMPLEMENTATION */
 
 /* BEGIN MEMORY POOL IMPLEMENTATION */
@@ -536,6 +727,51 @@ void cd_memory_pool_free(cd_memory_pool_t* mem_pool, void* object)
 }
 /* END MEMORY POOL IMPLEMENTATION */
 
+/* BEGIN RING BUFFER IMPLEMENTATION */
+
+void cd_ring_buffer_init(cd_ring_buffer_t* buff, int num_elements)
+{
+	if (num_elements)
+	{
+		buff->buffer = (float*)CUTE_DSP_ALLOC((sizeof(float) * num_elements), 0);
+		buff->current_index = 0;
+		buff->max_elements = num_elements;
+		memset(buff->buffer, 0, sizeof(float) * num_elements);
+	}
+	else
+	{
+		buff->buffer = 0;
+		buff->current_index = 0;
+		buff->max_elements = 0;
+	}
+}
+
+inline void cd_ring_buffer_put(cd_ring_buffer_t* buff, float value)
+{
+	buff->buffer[buff->current_index] = value;
+	buff->current_index = (buff->current_index + 1) % buff->max_elements;
+}
+
+inline float cd_ring_buffer_get(cd_ring_buffer_t* buff, int delay)
+{
+	int index = buff->current_index - delay - 1;
+	index %= buff->max_elements;
+	if (index < 0) index += buff->max_elements;
+	return buff->buffer[index];
+}
+
+void cd_ring_buffer_release(cd_ring_buffer_t* buff)
+{
+	CUTE_DSP_ASSERT(buff);
+	if(buff->buffer)
+		CUTE_DSP_FREE(buff->buffer, 0);
+	buff->buffer = 0;
+	buff->current_index = 0;
+	buff->max_elements = 0;
+}
+
+/* END RING BUFFER IMPLEMENTATION */
+
 /* BEGIN CONTEXT IMPLEMENTATION */
 static cd_context_t* cd_get_context(void)
 {
@@ -558,6 +794,7 @@ cd_context_t* cd_make_context(cs_context_t* sound_ctx, cd_context_def_t def)
 {
 	cd_memory_pool_def_t lowpass_def;
 	cd_memory_pool_def_t highpass_def;
+	cd_memory_pool_def_t echo_def;
 
 	cd_context_t* context = (cd_context_t *)CUTE_DSP_ALLOC(sizeof(cd_context_t), 0);
 	CUTE_DSP_ASSERT(context && def.playing_pool_count);
@@ -570,6 +807,8 @@ cd_context_t* cd_make_context(cs_context_t* sound_ctx, cd_context_def_t def)
 	memset(context->output2, 0, sizeof(float) * CUTE_DSP_MAX_FRAME_LENGTH);
 	context->current_output = context->output1;
 
+	/* set up filters =========================================== */
+	/* lowpass filter */
 	if(def.use_lowpass)
 	{
 		lowpass_def.max_objects = context->pool_size;
@@ -585,6 +824,7 @@ cd_context_t* cd_make_context(cs_context_t* sound_ctx, cd_context_def_t def)
 		context->lowpass_id = CUTE_DSP_INVALID_PLUGIN_ID;
 	}
 
+	/* highpass filter */
 	if(def.use_highpass)
 	{
 		highpass_def.max_objects = context->pool_size;
@@ -600,6 +840,27 @@ cd_context_t* cd_make_context(cs_context_t* sound_ctx, cd_context_def_t def)
 		context->highpass_id = CUTE_DSP_INVALID_PLUGIN_ID;
 	}
 
+	/* echo filter */
+	if (def.use_echo)
+	{
+		echo_def.max_objects = context->pool_size;
+		echo_def.size_per_object = sizeof(cd_echo_t);
+		cd_make_memory_pool(&context->echo_filters, echo_def);
+		
+		cs_plugin_interface_t echo_interface = cd_make_echo_plugin();
+		context->echo_id = cs_add_plugin(sound_ctx, &echo_interface);
+
+		if (def.echo_max_delay_s == 0.f)
+			context->echo_max_delay_s = CUTE_DSP_DEFAULT_ECHO_MAX_DELAY;
+		else
+			context->echo_max_delay_s = def.echo_max_delay_s;
+	}
+	else
+	{
+		memset(&context->echo_filters, 0, sizeof(cd_memory_pool_t));
+		context->echo_id = CUTE_DSP_INVALID_PLUGIN_ID;
+	}
+
 	return context;
 }
 
@@ -607,8 +868,12 @@ void cd_release_context(cd_context_t** context)
 {
 	CUTE_DSP_ASSERT(context && *context);
 
-	cd_release_memory_pool(&(*context)->lowpass_filters);
-	cd_release_memory_pool(&(*context)->highpass_filters);
+	if((*context)->lowpass_id != CUTE_DSP_INVALID_PLUGIN_ID)
+		cd_release_memory_pool(&(*context)->lowpass_filters);
+	if ((*context)->highpass_id!= CUTE_DSP_INVALID_PLUGIN_ID)
+		cd_release_memory_pool(&(*context)->highpass_filters);
+	if ((*context)->echo_id != CUTE_DSP_INVALID_PLUGIN_ID)
+		cd_release_memory_pool(&(*context)->echo_filters);
 
 	CUTE_DSP_FREE(*context, 0);
 	*context = 0;
@@ -684,11 +949,11 @@ float cd_get_lowpass_cutoff(const cs_playing_sound_t* playing_sound)
 
 void cd_sample_lowpass(cd_context_t* context, cd_lowpass_t* filter, const float* input, float** output, unsigned num_samples)
 {
-	unsigned i = 0; 
+	int i = 0; 
 	float* samples = context->current_output;
 	//memset(samples, 0, sizeof(float) * CUTE_DSP_MAX_FRAME_LENGTH);
 
-	for(; i < num_samples; ++i)
+	for(; i < (int)num_samples; ++i)
 	{
 		*samples = filter->x_coeff * *input++ + 
 					filter->y1_coeff * filter->y1 + 
@@ -720,7 +985,7 @@ cd_highpass_t* cd_make_highpass_filter(cd_context_t* context)
 
 void cd_release_highpass(cd_context_t* context, cd_highpass_t** filter)
 {
-	CUTE_DSP_ASSERT(filter && *filter);
+	CUTE_DSP_ASSERT(context && filter && *filter);
 	cd_memory_pool_free(&context->highpass_filters, *filter);
 	*filter = NULL;
 }
@@ -791,6 +1056,131 @@ void cd_sample_highpass(cd_context_t* context, cd_highpass_t* filter, const floa
 	cd_context_swap_buffers(context);
 }
 /* END HIGHPASS IMPLEMENTATION */
+
+/* BEGIN ECHO IMPLEMENTATION */
+
+cd_echo_t* cd_make_echo_filter(cd_context_t* context)
+{
+	cd_echo_t* filter = NULL;
+	CUTE_DSP_ASSERT(context);
+
+	filter = (cd_echo_t*)cd_memory_pool_alloc(&context->echo_filters);
+	CUTE_DSP_ASSERT(filter);
+
+	filter->sampling_rate = context->sampling_rate;
+	filter->max_samples = context->echo_max_delay_s * filter->sampling_rate;
+	filter->feedback = 0.f;
+	filter->offset = 0.f;
+	filter->mix = 0.f;
+	cd_ring_buffer_init(&filter->xvalues, (int)filter->max_samples);
+	cd_ring_buffer_init(&filter->yvalues, (int)filter->max_samples);
+
+	return filter;
+}
+
+void cd_release_echo_filter(cd_context_t* context, cd_echo_t** filter)
+{
+	CUTE_DSP_ASSERT(context && filter && *filter);
+	cd_ring_buffer_release(&(*filter)->xvalues);
+	cd_ring_buffer_release(&(*filter)->yvalues);
+	cd_memory_pool_free(&context->echo_filters, *filter);
+	*filter = NULL;
+}
+
+void cd_set_echo_delay(cs_playing_sound_t* playing_sound, float t)
+{
+	CUTE_DSP_ASSERT(playing_sound);
+	cd_context_t* ctx = cd_get_context();
+	if (t > ctx->echo_max_delay_s) return;
+	cd_echo_t* filter = (cd_echo_t*)playing_sound->plugin_udata[ctx->echo_id];
+	filter->offset = t * filter->sampling_rate;
+}
+
+void cd_set_echo_mix(cs_playing_sound_t* playing_sound, float a)
+{
+	CUTE_DSP_ASSERT(playing_sound);
+	cd_context_t* ctx = cd_get_context();
+	cd_echo_t* filter = (cd_echo_t*)playing_sound->plugin_udata[ctx->echo_id];
+	filter->mix = a;
+}
+
+void cd_set_echo_feedback(cs_playing_sound_t* playing_sound, float b)
+{
+	CUTE_DSP_ASSERT(playing_sound);
+	cd_context_t* ctx = cd_get_context();
+	cd_echo_t* filter = (cd_echo_t*)playing_sound->plugin_udata[ctx->echo_id];
+	filter->feedback = b;
+}
+
+float cd_get_echo_delay(const cs_playing_sound_t* playing_sound)
+{
+	CUTE_DSP_ASSERT(playing_sound);
+	cd_context_t* ctx = cd_get_context();
+	const cd_echo_t* filter = (cd_echo_t*)playing_sound->plugin_udata[ctx->echo_id];
+	return filter->offset / filter->sampling_rate;
+}
+
+float cd_get_echo_mix(const cs_playing_sound_t* playing_sound)
+{
+	CUTE_DSP_ASSERT(playing_sound);
+	cd_context_t* ctx = cd_get_context();
+	const cd_echo_t* filter = (cd_echo_t*)playing_sound->plugin_udata[ctx->echo_id];
+	return filter->mix;
+}
+
+float cd_get_echo_feedback(const cs_playing_sound_t* playing_sound)
+{
+	CUTE_DSP_ASSERT(playing_sound);
+	cd_context_t* ctx = cd_get_context();
+	const cd_echo_t* filter = (cd_echo_t*)playing_sound->plugin_udata[ctx->echo_id];
+	return filter->feedback;
+}
+
+float cd_get_echo_max_delay(const cs_playing_sound_t* playing_sound)
+{
+	CUTE_DSP_ASSERT(playing_sound);
+	cd_context_t* ctx = cd_get_context();
+	(void)playing_sound; /* unused parameter */
+	return ctx->echo_max_delay_s;
+}
+
+void cd_sample_echo(cd_context_t* context, cd_echo_t* filter, const float* input, float** output, unsigned num_samples)
+{
+	int i = 0; 
+	float* samples = context->current_output;
+	float out;
+	float startInd, endInd, factor;
+	float ystart, yend, yresult;
+	float xstart, xend, xresult;
+	for (; i < (int)num_samples; ++i)
+	{
+		out = *input;
+		startInd = (float)(int)filter->offset; // floor
+		endInd = startInd + 1;
+		factor = filter->offset - startInd;
+
+		ystart = cd_ring_buffer_get(&filter->yvalues, (int)startInd);
+		yend = cd_ring_buffer_get(&filter->yvalues, (int)endInd);
+		yresult = CUTE_DSP_LERP_FLOAT(ystart, yend, (int)factor);
+
+		xstart = cd_ring_buffer_get(&filter->xvalues, (int)startInd);
+		xend = cd_ring_buffer_get(&filter->xvalues, (int)endInd);
+		xresult = CUTE_DSP_LERP_FLOAT(xstart, xend, factor);
+
+		out += (filter->mix - filter->feedback) * xresult + filter->feedback * yresult;
+
+		cd_ring_buffer_put(&filter->yvalues, out);
+		cd_ring_buffer_put(&filter->xvalues, *input++);
+
+		*samples++ = out;
+	}
+	
+	*output = context->current_output;
+	cd_context_swap_buffers(context);
+}
+
+
+/* END ECHO IMPLEMENTATION */
 
 /* END FUNCTION IMPLEMENTATION */
 
