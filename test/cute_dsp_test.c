@@ -73,14 +73,12 @@ int input_get_key_triggered(int key)
 
 static void lowpass_test(void)
 {
-	int frequency = 44100; // a good standard frequency for playing commonly saved OGG + wav files
-	int latency_in_Hz = 15; // a good latency, too high will cause artifacts, too low will create noticeable delays
-	int buffered_seconds = 5; // number of seconds the buffer will hold in memory. want this long enough in case of frame-delays
-	int use_playing_pool = 1; // non-zero uses high-level API, 0 uses low-level API
+	unsigned frequency = 44100; // a good standard frequency for playing commonly saved OGG + wav files
+	int buffered_samples = 8192; // number of samples the buffer will hold in memory. want this long enough in case of frame-delays
 	int num_elements_in_playing_pool = PLAYING_POOL_SIZE; // pooled memory array size for playing sounds
 
 	// create the sound context
-	cs_context_t* sound_ctx = cs_make_context(GetConsoleWindow(), frequency, /*latency_in_Hz,*/ buffered_seconds, num_elements_in_playing_pool, 0);
+	cs_context_t* sound_ctx = cs_make_context(GetConsoleWindow(), frequency, buffered_samples, num_elements_in_playing_pool, 0);
 
 	// set mix thread running
 	cs_spawn_mix_thread(sound_ctx);
@@ -189,13 +187,11 @@ static void lowpass_test(void)
 static void highpass_test(void)
 {
 	int frequency = 44100; // a good standard frequency for playing commonly saved OGG + wav files
-	int latency_in_Hz = 15; // a good latency, too high will cause artifacts, too low will create noticeable delays
-	int buffered_seconds = 5; // number of seconds the buffer will hold in memory. want this long enough in case of frame-delays
-	int use_playing_pool = 1; // non-zero uses high-level API, 0 uses low-level API
+	int buffered_samples = 8192; // number of seconds the buffer will hold in memory. want this long enough in case of frame-delays
 	int num_elements_in_playing_pool = PLAYING_POOL_SIZE; // pooled memory array size for playing sounds
 
 	// create the sound context
-	cs_context_t* sound_ctx = cs_make_context(GetConsoleWindow(), frequency, /*latency_in_Hz,*/ buffered_seconds, num_elements_in_playing_pool, 0);
+	cs_context_t* sound_ctx = cs_make_context(GetConsoleWindow(), frequency, /*latency_in_Hz,*/ buffered_samples, num_elements_in_playing_pool, 0);
 
 	// set mix thread running
 	cs_spawn_mix_thread(sound_ctx);
@@ -304,13 +300,11 @@ static void highpass_test(void)
 static void echo_test(void)
 {
 	int frequency = 44100; // a good standard frequency for playing commonly saved OGG + wav files
-	int latency_in_Hz = 15; // a good latency, too high will cause artifacts, too low will create noticeable delays
-	int buffered_seconds = 5; // number of seconds the buffer will hold in memory. want this long enough in case of frame-delays
-	int use_playing_pool = 1; // non-zero uses high-level API, 0 uses low-level API
+	int buffered_samples = 8192; // number of seconds the buffer will hold in memory. want this long enough in case of frame-delays
 	int num_elements_in_playing_pool = PLAYING_POOL_SIZE; // pooled memory array size for playing sounds
 
 	// create the sound context
-	cs_context_t* sound_ctx = cs_make_context(GetConsoleWindow(), frequency, /*latency_in_Hz,*/ buffered_seconds, num_elements_in_playing_pool, 0);
+	cs_context_t* sound_ctx = cs_make_context(GetConsoleWindow(), frequency, buffered_samples, num_elements_in_playing_pool, 0);
 
 	// set mix thread running
 	cs_spawn_mix_thread(sound_ctx);

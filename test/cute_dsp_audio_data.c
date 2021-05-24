@@ -11,7 +11,7 @@
     Revision history:
         1.0     (05/25/2019) initial release: implemented reading/writing wav files.
 */
-
+#define _CRT_SECURE_NO_WARNINGS
 #include "cute_dsp_audio_data.h"
 
 #include <stdio.h>  /* File i/o */
