@@ -29,6 +29,9 @@ Uses two ring buffers for delay of input and output samples. There are three des
 * Mix factor (echo loudness)
 * Feedback factor (amount that echoes feedback into themselves)
 
+### Noise Generator
+Generates white noise and adds to a signal. The signal path of cute_dsp allows this white noise to be fed into other filters in the signal chain. The white noise is generated using a xorshift128 PRNG. 
+
 ## Usage
 cute_dsp must be used concurrently with cute_sound. 
   
@@ -53,7 +56,9 @@ dsp_context_definition.sampling_rate = (float)frequency;
 dsp_context_definition.use_highpass = 1;
 dsp_context_definition.use_lowpass = 1;
 dsp_context_definition.use_echo = 0;
+dsp_context_definition.use_noise = 1;
 dsp_context_definition.echo_max_delay_s = 0.f;
+dsp_context_definition.rand_seed = 2;
 
 // allocate the context
 cd_context_t* dsp_context = cd_make_context(dsp_context_definition);
@@ -87,4 +92,14 @@ float cd_get_echo_delay(const cs_playing_sound_t* playing_sound);
 float cd_get_echo_mix(const cs_playing_sound_t* playing_sound);
 float cd_get_echo_feedback(const cs_playing_sound_t* playing_sound);
 float cd_get_echo_max_delay(const cs_playing_sound_t* playing_sound);
+```
+
+### cd_noise_t
+To modify the parameters of the noise generator:
+```cpp
+void cd_set_noise_amplitude_db(cs_playing_sound_t* playing_sound, float db);
+void cd_set_noise_amplitude_gain(cs_playing_sound_t* playing_sound, float gain);
+
+float cd_get_noise_amplitude_db(const cs_playing_sound_t* playing_sound);
+float cd_get_noise_amplitude_gain(const cs_playing_sound_t* playing_sound);
 ```

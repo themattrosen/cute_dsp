@@ -3,7 +3,7 @@
 		Licensing information can be found at the end of the file.
 	------------------------------------------------------------------------------
 
-    cute_dsp_test.c - v1.0
+    cute_dsp_test.c - v1.5
 
     To compile (windows only):
 
@@ -13,7 +13,7 @@
 
         ./cute_dsp_test <test_num>
 
-		<test_num> = 0 for lowpass, 1 for highpass, 2 for echo
+		<test_num> = 0 for lowpass, 1 for highpass, 2 for echo, 3 for noise
 
 		More testing options will be added later as new features and tools become available.
 		
@@ -91,7 +91,9 @@ static void lowpass_test(void)
 	context_definition.use_highpass = 0;
 	context_definition.use_lowpass = 1;
 	context_definition.use_echo = 0;
+	context_definition.use_noise = 1;
 	context_definition.echo_max_delay_s = 0.f;
+	context_definition.rand_seed = 2;
 	cd_context_t* dsp_ctx = cd_make_context(sound_ctx, context_definition);
 	CUTE_DSP_ASSERT(dsp_ctx);
 
@@ -114,6 +116,8 @@ static void lowpass_test(void)
 	printf("-To change filter coefficients on background music press\n");
 	printf(" 'W' to increase the cutoff frequency and \n");
 	printf(" 'S' to decrease the cutoff frequency.\n");
+	printf(" 'E' to increase background noise amplitude DB and \n");
+	printf(" 'Q' to decrease background noise amplitude DB.\n");
 	printf("-Pressing 'A' will prompt you to pick a cutoff frequency\n");
 	printf(" for stinger1, which will then play with that coefficient.\n");
 	printf("-Pressing 'D' will prompt you to pick a cutoff frequency\n");
@@ -123,6 +127,7 @@ static void lowpass_test(void)
 
 	cs_playing_sound_t* music_sound = cs_play_sound(sound_ctx, def0);
 	float music_cutoff = cd_get_lowpass_cutoff(music_sound);
+	float music_noise = cd_get_noise_amplitude_db(music_sound);
 	
 	for (;;)
 	{
@@ -151,15 +156,35 @@ static void lowpass_test(void)
 			cd_set_lowpass_cutoff(music_sound, music_cutoff);
 		}
 
+		// increase noise amplitude of music
+		if (input_get_key_released('E'))
+		{
+			music_noise += 1.f;
+			printf("New music noise amplitude DB: %f\n", music_noise);
+			cd_set_noise_amplitude_db(music_sound, music_noise);
+		}
+
+		// decrease noise amplitude of music
+		if (input_get_key_released('Q'))
+		{
+			music_noise -= 1.f;
+			printf("New music noise amplitude DB: %f\n", music_noise);
+			cd_set_noise_amplitude_db(music_sound, music_noise);
+		}
+
 		// stinger 1
 		if (input_get_key_released('A'))
 		{
 			printf("Set Stinger1 cutoff frequency: ");
 			float freq = 20000.f;
 			scanf("%f", &freq);
+			printf("Set Stinger1 noise amplitude DB: ");
+			float db = -96.f;
+			scanf("%f", &db);
 			printf("Playing Stinger1\n");
 			cs_playing_sound_t* stinger_sound = cs_play_sound(sound_ctx, def1);
 			cd_set_lowpass_cutoff(stinger_sound, freq);
+			cd_set_noise_amplitude_db(stinger_sound, db);
 		}
 
 		// stinger 2
@@ -168,9 +193,13 @@ static void lowpass_test(void)
 			printf("Set Stinger2 cutoff frequency: ");
 			float freq = 20000.f;
 			scanf("%f", &freq);
+			printf("Set Stinger2 noise amplitude DB: ");
+			float db = -96.f;
+			scanf("%f", &db);
 			printf("Playing Stinger2\n");
 			cs_playing_sound_t* stinger_sound = cs_play_sound(sound_ctx, def2);
 			cd_set_lowpass_cutoff(stinger_sound, freq);
+			cd_set_noise_amplitude_db(stinger_sound, db);
 		}
 	}
 
@@ -204,7 +233,9 @@ static void highpass_test(void)
 	context_definition.use_highpass = 1;
 	context_definition.use_lowpass = 0;
 	context_definition.use_echo = 0;
+	context_definition.use_noise = 1;
 	context_definition.echo_max_delay_s = 0.f;
+	context_definition.rand_seed = 2;
 	cd_context_t* dsp_ctx = cd_make_context(sound_ctx, context_definition);
 	CUTE_DSP_ASSERT(dsp_ctx);
 
@@ -227,6 +258,8 @@ static void highpass_test(void)
 	printf("-To change filter coefficients on background music press\n");
 	printf(" 'W' to increase the cutoff frequency and \n");
 	printf(" 'S' to decrease the cutoff frequency.\n");
+	printf(" 'E' to increase background noise amplitude DB and \n");
+	printf(" 'Q' to decrease background noise amplitude DB.\n");
 	printf("-Pressing 'A' will prompt you to pick a cutoff frequency\n");
 	printf(" for stinger1, which will then play with that coefficient.\n");
 	printf("-Pressing 'D' will prompt you to pick a cutoff frequency\n");
@@ -236,6 +269,7 @@ static void highpass_test(void)
 
 	cs_playing_sound_t* music_sound = cs_play_sound(sound_ctx, def0);
 	float music_cutoff = cd_get_highpass_cutoff(music_sound);
+	float music_noise = cd_get_noise_amplitude_db(music_sound);
 
 	for (;;)
 	{
@@ -264,15 +298,35 @@ static void highpass_test(void)
 			cd_set_highpass_cutoff(music_sound, music_cutoff);
 		}
 
+		// increase noise amplitude of music
+		if (input_get_key_released('E'))
+		{
+			music_noise += 1.f;
+			printf("New music noise amplitude DB: %f\n", music_noise);
+			cd_set_noise_amplitude_db(music_sound, music_noise);
+		}
+
+		// decrease noise amplitude of music
+		if (input_get_key_released('Q'))
+		{
+			music_noise -= 1.f;
+			printf("New music noise amplitude DB: %f\n", music_noise);
+			cd_set_noise_amplitude_db(music_sound, music_noise);
+		}
+
 		// stinger 1
 		if (input_get_key_released('A'))
 		{
 			printf("Set Stinger1 cutoff frequency: ");
 			float freq = 20000.f;
 			scanf("%f", &freq);
+			printf("Set Stinger1 noise amplitude DB: ");
+			float db = -96.f;
+			scanf("%f", &db);
 			printf("Playing Stinger1\n");
 			cs_playing_sound_t* stinger_sound = cs_play_sound(sound_ctx, def1);
 			cd_set_highpass_cutoff(stinger_sound, freq);
+			cd_set_noise_amplitude_db(stinger_sound, db);
 		}
 
 		// stinger 2
@@ -281,9 +335,13 @@ static void highpass_test(void)
 			printf("Set Stinger2 cutoff frequency: ");
 			float freq = 20000.f;
 			scanf("%f", &freq);
+			printf("Set Stinger2 noise amplitude DB: ");
+			float db = -96.f;
+			scanf("%f", &db);
 			printf("Playing Stinger2\n");
 			cs_playing_sound_t* stinger_sound = cs_play_sound(sound_ctx, def2);
 			cd_set_highpass_cutoff(stinger_sound, freq);
+			cd_set_noise_amplitude_db(stinger_sound, db);
 		}
 	}
 
@@ -317,7 +375,9 @@ static void echo_test(void)
 	context_definition.use_highpass = 0;
 	context_definition.use_lowpass = 0;
 	context_definition.use_echo = 1;
+	context_definition.use_noise = 1;
 	context_definition.echo_max_delay_s = 0.f;
+	context_definition.rand_seed = 2;
 	cd_context_t* dsp_ctx = cd_make_context(sound_ctx, context_definition);
 	CUTE_DSP_ASSERT(dsp_ctx);
 
@@ -344,6 +404,8 @@ static void echo_test(void)
 	printf(" '4' to decrease the echo mix.\n");
 	printf(" '5' to increase the echo feedback and \n");
 	printf(" '6' to decrease the echo feedback.\n");
+	printf(" 'E' to increase background noise amplitude DB and \n");
+	printf(" 'Q' to decrease background noise amplitude DB.\n");
 	printf("-Pressing 'A' will prompt you to pick parameters\n");
 	printf(" for stinger1, which will then play with those coefficients.\n");
 	printf("-Pressing 'D' will prompt you to pick parameters\n");
@@ -355,8 +417,8 @@ static void echo_test(void)
 	float music_mix = cd_get_echo_mix(music_sound);
 	float music_feedback = cd_get_echo_feedback(music_sound);
 	float music_delay = cd_get_echo_delay(music_sound);
+	float music_noise = cd_get_noise_amplitude_db(music_sound);
 
-	//TODO
 	for (;;)
 	{
 		input_update();
@@ -410,6 +472,22 @@ static void echo_test(void)
 			cd_set_echo_feedback(music_sound, music_feedback);
 		}
 
+		// increase noise amplitude of music
+		if (input_get_key_released('E'))
+		{
+			music_noise += 1.f;
+			printf("New music noise amplitude DB: %f\n", music_noise);
+			cd_set_noise_amplitude_db(music_sound, music_noise);
+		}
+
+		// decrease noise amplitude of music
+		if (input_get_key_released('Q'))
+		{
+			music_noise -= 1.f;
+			printf("New music noise amplitude DB: %f\n", music_noise);
+			cd_set_noise_amplitude_db(music_sound, music_noise);
+		}
+
 		if (input_get_key_released('A'))
 		{
 			float delay = 0.f;
@@ -421,11 +499,15 @@ static void echo_test(void)
 			scanf("%f", &mix);
 			printf("Set Stinger1 feedback: ");
 			scanf("%f", &feedback);
+			printf("Set Stinger1 noise amplitude DB: ");
+			float db = -96.f;
+			scanf("%f", &db);
 			printf("Playing Stinger1\n");
 			cs_playing_sound_t* stinger_sound = cs_play_sound(sound_ctx, def1);
 			cd_set_echo_delay(stinger_sound, delay);
 			cd_set_echo_feedback(stinger_sound, feedback);
 			cd_set_echo_mix(stinger_sound, mix);
+			cd_set_noise_amplitude_db(stinger_sound, db);
 		}
 
 		if (input_get_key_released('D'))
@@ -439,11 +521,143 @@ static void echo_test(void)
 			scanf("%f", &mix);
 			printf("Set Stinger2 feedback: ");
 			scanf("%f", &feedback);
+			printf("Set Stinger2 noise amplitude DB: ");
+			float db = -96.f;
+			scanf("%f", &db);
 			printf("Playing Stinger2\n");
 			cs_playing_sound_t* stinger_sound = cs_play_sound(sound_ctx, def2);
 			cd_set_echo_delay(stinger_sound, delay);
 			cd_set_echo_feedback(stinger_sound, feedback);
 			cd_set_echo_mix(stinger_sound, mix);
+			cd_set_noise_amplitude_db(stinger_sound, db);
+		}
+	}
+
+	// release contexts
+	cs_shutdown_context(sound_ctx);
+	cd_release_context(&dsp_ctx);
+
+	// free sounds
+	cs_free_sound(&music1);
+	cs_free_sound(&stinger1);
+	cs_free_sound(&stinger2);
+}
+
+static void noise_test(void)
+{
+	int frequency = 44100; // a good standard frequency for playing commonly saved OGG + wav files
+	int buffered_samples = 8192; // number of seconds the buffer will hold in memory. want this long enough in case of frame-delays
+	int num_elements_in_playing_pool = PLAYING_POOL_SIZE; // pooled memory array size for playing sounds
+
+	// create the sound context
+	cs_context_t* sound_ctx = cs_make_context(GetConsoleWindow(), frequency, buffered_samples, num_elements_in_playing_pool, 0);
+
+	// set mix thread running
+	cs_spawn_mix_thread(sound_ctx);
+	cs_thread_sleep_delay(sound_ctx, 10);
+
+	// create the dsp contexts
+	cd_context_def_t context_definition;
+	context_definition.playing_pool_count = num_elements_in_playing_pool;
+	context_definition.sampling_rate = (float)frequency;
+	context_definition.use_highpass = 0;
+	context_definition.use_lowpass = 0;
+	context_definition.use_echo = 0;
+	context_definition.use_noise = 1;
+	context_definition.echo_max_delay_s = 0.f;
+	context_definition.rand_seed = 2;
+	cd_context_t* dsp_ctx = cd_make_context(sound_ctx, context_definition);
+	CUTE_DSP_ASSERT(dsp_ctx);
+
+	// load audio files
+	cs_loaded_sound_t music1 = cs_load_wav("music2.wav");
+	cs_loaded_sound_t stinger1 = cs_load_wav("stinger1.wav");
+	cs_loaded_sound_t stinger2 = cs_load_wav("stinger2.wav");
+	CUTE_DSP_ASSERT(music1.channel_count);
+	CUTE_DSP_ASSERT(stinger1.channel_count);
+	CUTE_DSP_ASSERT(stinger2.channel_count);
+
+	// play sound defs to start playing audio
+	cs_play_sound_def_t def0 = cs_make_def(&music1);
+	cs_play_sound_def_t def1 = cs_make_def(&stinger1);
+	cs_play_sound_def_t def2 = cs_make_def(&stinger2);
+	def0.looped = 1;
+
+	printf("Noise Generator Test\n");
+	printf("--------------------\n");
+	printf("-To change noise coefficients on background music press\n");
+	printf(" '1' to increase the noise amplitude DB \n");
+	printf(" '2' to decrease the noise amplitude DB \n");
+	printf(" '3' to increase the noise amplitude Gain \n");
+	printf(" '4' to decrease the noise amplitude Gain \n");
+	printf("-Pressing 'A' will prompt you to pick parameters\n");
+	printf(" for stinger1, which will then play with those coefficients.\n");
+	printf("-Pressing 'D' will prompt you to pick parameters\n");
+	printf(" for stinger2, which will then play with those coefficients.\n");
+	printf("\n-To quit, press ESCAPE\n");
+	printf("--------------------\n\n");
+
+	cs_playing_sound_t* music_sound = cs_play_sound(sound_ctx, def0);
+	float music_amp_db = cd_get_noise_amplitude_db(music_sound);
+	float music_amp_gain = cd_get_noise_amplitude_gain(music_sound);
+
+	for (;;)
+	{
+		input_update();
+
+		// if user ever presses escape, break out
+		if (GetAsyncKeyState(VK_ESCAPE))
+		{
+			printf("QUITTING INTEGRATION_TEST\n");
+			break;
+		}
+
+		if (input_get_key_released('1'))
+		{
+			music_amp_db += 1.f;
+			printf("New music amplitude db: %f\n", music_amp_db);
+			cd_set_noise_amplitude_db(music_sound, music_amp_db);
+		}
+
+		if (input_get_key_released('2'))
+		{
+			music_amp_db -= 1.f;
+			printf("New music amplitude db: %f\n", music_amp_db);
+			cd_set_noise_amplitude_db(music_sound, music_amp_db);
+		}
+
+		if (input_get_key_released('3'))
+		{
+			music_amp_gain += 0.01f;
+			printf("New music amplitude gain: %f\n", music_amp_gain);
+			cd_set_noise_amplitude_gain(music_sound, music_amp_gain);
+		}
+
+		if (input_get_key_released('4'))
+		{
+			music_amp_gain -= 0.01f;
+			printf("new music amplitude gain: %f\n", music_amp_gain);
+			cd_set_noise_amplitude_gain(music_sound, music_amp_gain);
+		}
+
+		if (input_get_key_released('A'))
+		{
+			float db = 0.f;
+			printf("Set Stinger1 amplitude DB: ");
+			scanf("%f", &db);
+			printf("Playing Stinger1\n");
+			cs_playing_sound_t* stinger_sound = cs_play_sound(sound_ctx, def1);
+			cd_set_noise_amplitude_db(stinger_sound, db);
+		}
+
+		if (input_get_key_released('D'))
+		{
+			float db = 0.f;
+			printf("Set Stinger2 amplitude DB: ");
+			scanf("%f", &db);
+			printf("Playing Stinger2\n");
+			cs_playing_sound_t* stinger_sound = cs_play_sound(sound_ctx, def2);
+			cd_set_noise_amplitude_db(stinger_sound, db);
 		}
 	}
 
@@ -461,7 +675,8 @@ typedef void(*test_func)(void);
 test_func tests[] = {
 	lowpass_test,
 	highpass_test,
-	echo_test
+	echo_test,
+	noise_test
 };
 
 /* END INTEGRATION TESTS */
@@ -477,7 +692,8 @@ int main(int argc, char** argv)
 		printf("    ./cute_dsp_test <test_num>\n");
 		printf("    <test_num> = 0 for lowpass test,\n");
 		printf("                 1 for highpass test,\n");
-		printf("                 2 for echo test\n\n");
+		printf("                 2 for echo test\n");
+		printf("                 3 for noise test\n\n");
 		return 1;
 	}
 
