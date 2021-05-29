@@ -17,10 +17,10 @@ The scope of cute_dsp will eventually include:
 ## Implemented Features
 
 ### Lowpass Filtering
-Uses a second order Butterworth filter with a 6dB per octave rolloff. 
+Uses a second order Butterworth filter with a 6dB per octave rolloff, with added resonance. 
 
 ### Highpass Filtering
-Uses a second order Butterworth filter with a 6dB per octave rolloff, converted from the lowpass filter equation.
+Uses a second order Butterworth filter with a 6dB per octave rolloff, converted from the lowpass filter equation, without resonance.
 
 ### Echo Filtering
 Uses two ring buffers for delay of input and output samples. There are three designable parameters:
@@ -75,11 +75,15 @@ For each sound played using cute_sound, there will be a copy of each filter you'
 To modify the cutoff frequencies of the lowpass/highpass filters:
 ```cpp
 void cd_set_lowpass_cutoff(cs_playing_sound_t* playing_sound, float cutoff_in_hz);
+void cd_set_lowpass_resonance(cs_playing_sound_t* playing_sound, float resonance);
 void cd_set_highpass_cutoff(cs_playing_sound_t* playing_sound, float cutoff_in_hz);
 
 float cd_get_lowpass_cutoff(const cs_playing_sound_t* playing_sound);
+float cd_get_lowpass_resonance(const cs_playing_sound_t* playing_sound);
 float cd_get_highpass_cutoff(const cs_playing_sound_t* playing_sound);
 ```
+Cutoff frequency is limited to the range of frequencies able to be heard by humans, [20, 20,000] Hz.
+Resonance is limited to the range of [0, 1].
 
 ### cd_echo_t
 To modify the parameters of the echo filter:

@@ -32,6 +32,7 @@
 		1.3 	(09/02/2019)	added cute_sound plugin interface
 		1.4		(02/26/2020)	added echo filter plugin
 		1.5		(05/24/2021)	added noise generator plugin
+		1.6		(05/29/2021)	added resonance to the lowpass filter plugin
 */
 #ifndef CUTE_SOUND_H
 #	error Please include cute_sound.h before including cute_dsp.h.
@@ -75,7 +76,7 @@ typedef struct cd_context_t cd_context_t;
 
 /*
 	cute_dsp lowpass filter type. 
-	Implemented using a second order (6dB/Octave roll off) Butterworth filter.
+	Implemented using a second order (6dB/Octave roll off) Butterworth filter with resonance.
 */
 struct cd_lowpass_t;
 typedef struct cd_lowpass_t cd_lowpass_t;
@@ -164,13 +165,6 @@ cd_lowpass_t* cd_make_lowpass_filter(cd_context_t* context);
 void cd_release_lowpass(cd_context_t* context, cd_lowpass_t** filter);
 
 /*
-	Sets the cutoff frequency in a lowpass filter, and updates the filter coefficients.
-	Cutoff frequency parameter is in samples per second.
-	Calls cd_set_lowpass_cutoff_frequency_radians with the converted value
-*/
-void cd_set_lowpass_cutoff_frequency(cd_lowpass_t* filter, float cutoff_freq_in_hz);
-
-/*
 	Fetches lowpass filter from playing sound and calls cd_set_lowpass_cutoff_frequency.
 */
 void cd_set_lowpass_cutoff(cs_playing_sound_t* playing_sound, float cutoff_freq_in_hz);
@@ -179,13 +173,23 @@ void cd_set_lowpass_cutoff(cs_playing_sound_t* playing_sound, float cutoff_freq_
 	Gets the cutoff frequency in a lowpass filter.
 	Cutoff frequency parameter in hz.
 */
-float cd_get_lowpass_cutoff_frequency(const cd_lowpass_t* filter);
+float cd_get_lowpass_cutoff(const cs_playing_sound_t* playing_sound);
 
 /*
-	Gets the cutoff frequency in a lowpass filter.
-	Cutoff frequency parameter in hz.
+	Sets the lowpass filter resonance coefficient on the lpf on the playing sound. 
+	Resonance is in the range of [0, 1], with zero being no resonance added.
+	Resonance manifests as a boost in amplitude for frequencies near the 
+	lowpass cutoff frequency. 
 */
-float cd_get_lowpass_cutoff(const cs_playing_sound_t* playing_sound);
+void cd_set_lowpass_resonance(cs_playing_sound_t* playing_sound, float resonance);
+
+/*
+	Gets the lowpass filter resonance from the playing sound.
+	Resonance is in the range of [0, 1], with zero being no resonance added.
+	Resonance manifests as a boost in amplitude for frequencies near the
+	lowpass cutoff frequency.
+*/
+float cd_get_lowpass_resonance(const cs_playing_sound_t* playing_sound);
 
 /*
 	Processes the next audio frame using the given lowpass filter.
@@ -469,6 +473,7 @@ typedef struct cd_lowpass_t
 	struct cd_lowpass_t* next;
 	float freq_cutoff;
 	float sampling_rate;
+	float resonance;
 	float y1;
 	float y2;
 	float x_coeff;
@@ -1087,6 +1092,26 @@ void cd_release_context(cd_context_t** context)
 /* END CONTEXT IMPLEMENTATION */
 
 /* BEGIN LOWPASS IMPLEMENTATION */
+static void cd_set_lowpass_parameters(cd_lowpass_t* filter, float freq_in_hz, float resonance)
+{
+	if (resonance < 0.f || resonance > 1.f
+		|| freq_in_hz < CUTE_DSP_DEFAULT_HIGHPASS_CUTOFF 
+		|| freq_in_hz > CUTE_DSP_DEFAULT_LOWPASS_CUTOFF)
+		return;
+	
+	filter->resonance = resonance;
+	filter->freq_cutoff = freq_in_hz;
+	float cutoff = 2.f * CUTE_DSP_PI * filter->freq_cutoff;
+	float theta = resonance * CUTE_DSP_PI / 4.f;
+	float R = filter->sampling_rate;
+	float R2 = R * R;
+	float g = 2.f * cutoff * CUTE_DSP_SIN(CUTE_DSP_PI / 4.f - theta) * R;
+	float d = 1.f / (R2 + g + cutoff * cutoff);
+	filter->x_coeff = (cutoff * cutoff) * d;
+	filter->y1_coeff = (2.f * R2 + g) * d;
+	filter->y2_coeff = -1.f * R2 * d;
+}
+
 cd_lowpass_t* cd_make_lowpass_filter(cd_context_t* context)
 {
 	cd_lowpass_t* filter = NULL;
@@ -1096,7 +1121,7 @@ cd_lowpass_t* cd_make_lowpass_filter(cd_context_t* context)
 	CUTE_DSP_ASSERT(filter);
 
 	filter->sampling_rate = context->sampling_rate;
-	cd_set_lowpass_cutoff_frequency(filter, CUTE_DSP_DEFAULT_LOWPASS_CUTOFF);
+	cd_set_lowpass_parameters(filter, CUTE_DSP_DEFAULT_LOWPASS_CUTOFF, 0.f);
 	filter->y1 = filter->y2 = 0.f;
 	filter->next = 0;
 	return filter;
@@ -1109,27 +1134,6 @@ void cd_release_lowpass(cd_context_t* context, cd_lowpass_t** filter)
 	*filter = NULL;
 }
 
-static void cd_set_lowpass_cutoff_frequency_radians(cd_lowpass_t* filter, float cutoff_freq_in_rad)
-{
-	float T = cutoff_freq_in_rad / filter->sampling_rate;
-	float Y = 1.f / (1.f + CUTE_DSP_SQRT_2 * T + T * T);
-	filter->x_coeff  = T * T * Y;
-	filter->y1_coeff = (2.f + CUTE_DSP_SQRT_2 * T) * Y;
-	filter->y2_coeff = -1.f * Y;
-}
-
-void cd_set_lowpass_cutoff_frequency(cd_lowpass_t* filter, float cutoff_freq_in_hz)
-{
-	filter->freq_cutoff = cutoff_freq_in_hz;
-	float freq_in_rad = 2.f * CUTE_DSP_PI * cutoff_freq_in_hz;
-
-	cd_set_lowpass_cutoff_frequency_radians(filter, freq_in_rad);
-	if(filter->next)
-	{
-		cd_set_lowpass_cutoff_frequency_radians(filter->next, freq_in_rad);
-	}
-}
-
 void cd_set_lowpass_cutoff(cs_playing_sound_t* playing_sound, float cutoff_freq_in_hz)
 {
 	CUTE_DSP_ASSERT(playing_sound);
@@ -1137,12 +1141,9 @@ void cd_set_lowpass_cutoff(cs_playing_sound_t* playing_sound, float cutoff_freq_
 	CUTE_DSP_ASSERT(ctx->lowpass_id != CUTE_DSP_INVALID_PLUGIN_ID);
 
 	cd_lowpass_t* filter = (cd_lowpass_t*)playing_sound->plugin_udata[ctx->lowpass_id];
-	cd_set_lowpass_cutoff_frequency(filter, cutoff_freq_in_hz);
-}
-
-float cd_get_lowpass_cutoff_frequency(const cd_lowpass_t* filter)
-{
-	return filter->freq_cutoff;
+	cd_set_lowpass_parameters(filter, cutoff_freq_in_hz, filter->resonance);
+	if (filter->next)
+		cd_set_lowpass_parameters(filter->next, cutoff_freq_in_hz, filter->resonance);
 }
 
 float cd_get_lowpass_cutoff(const cs_playing_sound_t* playing_sound)
@@ -1152,14 +1153,35 @@ float cd_get_lowpass_cutoff(const cs_playing_sound_t* playing_sound)
 	CUTE_DSP_ASSERT(ctx->lowpass_id != CUTE_DSP_INVALID_PLUGIN_ID);
 
 	const cd_lowpass_t* filter = (const cd_lowpass_t*)playing_sound->plugin_udata[ctx->lowpass_id];
-	return cd_get_lowpass_cutoff_frequency(filter);
+	return filter->freq_cutoff;
+}
+
+void cd_set_lowpass_resonance(cs_playing_sound_t* playing_sound, float resonance)
+{
+	CUTE_DSP_ASSERT(playing_sound);
+	cd_context_t* ctx = cd_get_context();
+	CUTE_DSP_ASSERT(ctx->lowpass_id != CUTE_DSP_INVALID_PLUGIN_ID);
+
+	cd_lowpass_t* filter = (cd_lowpass_t*)playing_sound->plugin_udata[ctx->lowpass_id];
+	cd_set_lowpass_parameters(filter, filter->freq_cutoff, resonance);
+	if (filter->next)
+		cd_set_lowpass_parameters(filter->next, filter->freq_cutoff, resonance);
+}
+
+float cd_get_lowpass_resonance(const cs_playing_sound_t* playing_sound)
+{
+	CUTE_DSP_ASSERT(playing_sound);
+	cd_context_t* ctx = cd_get_context();
+	CUTE_DSP_ASSERT(ctx->lowpass_id != CUTE_DSP_INVALID_PLUGIN_ID);
+
+	const cd_lowpass_t* filter = (const cd_lowpass_t*)playing_sound->plugin_udata[ctx->lowpass_id];
+	return filter->resonance;
 }
 
 void cd_sample_lowpass(cd_context_t* context, cd_lowpass_t* filter, const float* input, float** output, unsigned num_samples)
 {
 	int i = 0; 
 	float* samples = context->current_output;
-	//memset(samples, 0, sizeof(float) * CUTE_DSP_MAX_FRAME_LENGTH);
 
 	for(; i < (int)num_samples; ++i)
 	{

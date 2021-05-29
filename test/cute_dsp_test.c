@@ -118,6 +118,8 @@ static void lowpass_test(void)
 	printf(" 'S' to decrease the cutoff frequency.\n");
 	printf(" 'E' to increase background noise amplitude DB and \n");
 	printf(" 'Q' to decrease background noise amplitude DB.\n");
+	printf(" 'R' to increase the resonance and \n");
+	printf(" 'F' to decrease the resonance.\n");
 	printf("-Pressing 'A' will prompt you to pick a cutoff frequency\n");
 	printf(" for stinger1, which will then play with that coefficient.\n");
 	printf("-Pressing 'D' will prompt you to pick a cutoff frequency\n");
@@ -127,6 +129,7 @@ static void lowpass_test(void)
 
 	cs_playing_sound_t* music_sound = cs_play_sound(sound_ctx, def0);
 	float music_cutoff = cd_get_lowpass_cutoff(music_sound);
+	float music_resonance = cd_get_lowpass_resonance(music_sound);
 	float music_noise = cd_get_noise_amplitude_db(music_sound);
 	
 	for (;;)
@@ -156,6 +159,22 @@ static void lowpass_test(void)
 			cd_set_lowpass_cutoff(music_sound, music_cutoff);
 		}
 
+		// increase resonance of music
+		if (input_get_key_released('R'))
+		{
+			music_resonance += 0.01f;
+			printf("New music resonance: %f\n", music_resonance);
+			cd_set_lowpass_resonance(music_sound, music_resonance);
+		}
+
+		// decrease resonance of music
+		if (input_get_key_released('F'))
+		{
+			music_resonance -= 0.01f;
+			printf("New music resonance: %f\n", music_resonance);
+			cd_set_lowpass_resonance(music_sound, music_resonance);
+		}
+
 		// increase noise amplitude of music
 		if (input_get_key_released('E'))
 		{
@@ -178,12 +197,16 @@ static void lowpass_test(void)
 			printf("Set Stinger1 cutoff frequency: ");
 			float freq = 20000.f;
 			scanf("%f", &freq);
+			printf("Set Stinger1 resonance: ");
+			float res = 0.f;
+			scanf("%f", &res);
 			printf("Set Stinger1 noise amplitude DB: ");
 			float db = -96.f;
 			scanf("%f", &db);
 			printf("Playing Stinger1\n");
 			cs_playing_sound_t* stinger_sound = cs_play_sound(sound_ctx, def1);
 			cd_set_lowpass_cutoff(stinger_sound, freq);
+			cd_set_lowpass_resonance(stinger_sound, res);
 			cd_set_noise_amplitude_db(stinger_sound, db);
 		}
 
@@ -193,12 +216,16 @@ static void lowpass_test(void)
 			printf("Set Stinger2 cutoff frequency: ");
 			float freq = 20000.f;
 			scanf("%f", &freq);
+			printf("Set Stinger2 resonance: ");
+			float res = 0.f;
+			scanf("%f", &res);
 			printf("Set Stinger2 noise amplitude DB: ");
 			float db = -96.f;
 			scanf("%f", &db);
 			printf("Playing Stinger2\n");
 			cs_playing_sound_t* stinger_sound = cs_play_sound(sound_ctx, def2);
 			cd_set_lowpass_cutoff(stinger_sound, freq);
+			cd_set_lowpass_resonance(stinger_sound, res);
 			cd_set_noise_amplitude_db(stinger_sound, db);
 		}
 	}
